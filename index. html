@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agenda Installazioni</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCygUawe-ofhq2BtB-l0SvQnM3jlGmqCyo&libraries=places&callback=initMaps" async defer></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #080808; color: #d6d3cf; font-family: 'IBM Plex Mono', 'Courier New', monospace; }
+  input, select { font-family: inherit; }
+  /* Autocomplete dropdown styling */
+  .pac-container { background: #1a1a1a; border: 1px solid #444; font-family: 'IBM Plex Mono', monospace; }
+  .pac-item { color: #aaa; border-top: 1px solid #222; padding: 6px 8px; cursor: pointer; font-size: 12px; }
+  .pac-item:hover { background: #222; }
+  .pac-item-query { color: #f59e0b; }
+  .pac-matched { color: #f59e0b; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  window._mapsReady = false;
+  window.initMaps = function() { window._mapsReady = true; window._mapsReadyResolve && window._mapsReadyResolve(); };
+  window._mapsReadyPromise = new Promise(r => { window._mapsReadyResolve = r; if(window._mapsReady) r(); });
+</script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const GMAPS_KEY = "AIzaSyCygUawe-ofhq2BtB-l0SvQnM3jlGmqCyo";
+const DEFAULT_SETTINGS = { costoKm: 0.35, velocitaMedia: 60, cittaBase: "Genova, Italia" };
+
+function minToHHMM(min) {
+  if (!min && min !== 0) return "—";
+  const h = Math.floor(min / 60), m = min % 60;
+  return h > 0 ? `${h}h${m > 0 ? " " + m + "m" : ""}` : `${m}m`;
+}
+function timeToMin(hhmm) { const [h,m] = hhmm.split(":").map(Number); return h*60+m; }
+function minToTime(t) { const h=Math.floor(t/60)%24, m=t%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`; }
+function fmt(n) { return (parseFloat(n)||0).toFixed(2); }
+
+const emptyApp = () => ({
+  id: Date.now()+Math.random(), cliente:"", indirizzo:"",
+  km:null, kmLoading:false, kmError:null,
+  durataLavoro:90, fattura:"", orarioInizio:"08:00", note:"", extraDisp:[],
+});
+
+function calcApp(app, s) {
+  const km = parseFloat(app.km)||0;
+  const fattura = parseFloat(app.fattura)||0;
+  const extraTot = (app.extraDisp||[]).reduce((acc,d)=>acc+(parseFloat(d.prezzo)||0),0);
+  const tempoViaggio = km>0 ? Math.round((km/s.velocitaMedia)*60) : 0;
+  const costoViaggio = km*2*s.costoKm;
+  const durataLavoro = parseInt(app.durataLavoro)||0;
+  const tempoTotale = tempoViaggio*2+durataLavoro;
+  const ricavoTot = fattura+extraTot;
+  const utile = ricavoTot-costoViaggio;
+  return {km,fattura,extraTot,ricavoTot,tempoViaggio,costoViaggio,durataLavoro,tempoTotale,utile};
+}
+
+const iStyle = {
+  width:"100%", background:"#111", border:"1px solid #333",
+  color:"#e5e0d8", padding:"7px 9px", fontSize:"13px",
+  fontFamily:"inherit", outline:"none",
+};
+const lbl = { color:"#555", fontSize:"11px", display:"block", marginBottom:"3px", letterSpacing:"0.07em" };
+
+function AddressInput({ value, onChange, onPlaceSelected, placeholder }) {
+  const ref = useRef(null);
+  const acRef = useRef(null);
+  const [ready, setReady] = useState(window._mapsReady);
+
+  useEffect(() => {
+    window._mapsReadyPromise.then(() => setReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !ref.current || acRef.current) return;
+    acRef.current = new window.google.maps.places.Autocomplete(ref.current, {
+      componentRestrictions: { country: "it" },
+      fields: ["formatted_address"],
+    });
+    acRef.current.addListener("place_changed", () => {
+      const place = acRef.current.getPlace();
+      if (place?.formatted_address) {
+        onChange(place.formatted_address);
+        onPlaceSelected(place.formatted_address);
+      }
+    });
+  }, [ready]);
+
+  return (
+    <input ref={ref} value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={ready ? "Via, Città — autocompletamento attivo" : placeholder}
+      style={iStyle}
+    />
+  );
+}
+
+function ExtraDispositivi({ extra, onChange }) {
+  const add = () => onChange([...extra, {id:Date.now(), nome:"", prezzo:""}]);
+  const rem = id => onChange(extra.filter(d=>d.id!==id));
+  const upd = (id,k,v) => onChange(extra.map(d=>d.id===id?{...d,[k]:v}:d));
+  const tot = extra.reduce((s,d)=>s+(parseFloat(d.prezzo)||0),0);
+
+  return (
+    <div style={{marginTop:"10px", borderTop:"1px solid #1e1e1e", paddingTop:"10px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px"}}>
+        <span style={{...lbl, margin:0}}>EXTRA DISPOSITIVI SUL POSTO</span>
+        <button onClick={add} style={{background:"transparent", border:"1px solid #444", color:"#888",
+          padding:"3px 8px", fontSize:"11px", fontFamily:"inherit", cursor:"pointer"}}>+ aggiungi</button>
+      </div>
+      {extra.length===0 && <div style={{color:"#333", fontSize:"11px", fontStyle:"italic"}}>Nessun extra aggiunto</div>}
+      {extra.map(d=>(
+        <div key={d.id} style={{display:"grid", gridTemplateColumns:"1fr 90px 28px", gap:"4px", marginBottom:"4px"}}>
+          <input style={iStyle} placeholder="Dispositivo / descrizione" value={d.nome}
+            onChange={e=>upd(d.id,"nome",e.target.value)} />
+          <input type="number" style={{...iStyle, color:"#4ade80"}} placeholder="€" value={d.prezzo}
+            onChange={e=>upd(d.id,"prezzo",e.target.value)} />
+          <button onClick={()=>rem(d.id)} style={{background:"transparent", border:"1px solid #333",
+            color:"#555", cursor:"pointer", fontSize:"14px", fontFamily:"inherit"}}>×</button>
+        </div>
+      ))}
+      {extra.length>0 && (
+        <div style={{textAlign:"right", color:"#4ade80", fontSize:"12px", marginTop:"6px"}}>
+          Totale extra: +€{tot.toFixed(2)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AppCard({ app, idx, settings, onUpdate, onRemove, prevEndMin, fetchKm }) {
+  const calc = calcApp(app, settings);
+  const startMin = timeToMin(app.orarioInizio);
+  const endMin = startMin + calc.tempoTotale;
+  const overlap = prevEndMin!==null && startMin<prevEndMin;
+  const [showExtra, setShowExtra] = useState(false);
+
+  return (
+    <div style={{border:"1px solid #222", background:"#0d0d0d", marginBottom:"12px", borderRadius:"2px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center",
+        padding:"7px 10px", background:"#141414", borderBottom:"1px solid #1e1e1e"}}>
+        <span style={{color:"#f59e0b", fontSize:"11px", letterSpacing:"0.12em"}}>INTERVENTO {idx+1}</span>
+        <button onClick={()=>onRemove(app.id)} style={{background:"transparent", border:"none",
+          color:"#444", cursor:"pointer", fontSize:"11px", fontFamily:"inherit"}}>✕ rimuovi</button>
+      </div>
+
+      <div style={{padding:"10px"}}>
+        <div style={{marginBottom:"8px"}}>
+          <label style={lbl}>CLIENTE</label>
+          <input style={iStyle} placeholder="Nome cliente" value={app.cliente}
+            onChange={e=>onUpdate(app.id,"cliente",e.target.value)} />
+        </div>
+
+        <div style={{marginBottom:"8px"}}>
+          <label style={lbl}>INDIRIZZO</label>
+          <AddressInput value={app.indirizzo}
+            onChange={v=>onUpdate(app.id,"indirizzo",v)}
+            onPlaceSelected={addr=>fetchKm(app.id,addr)}
+            placeholder="Via, Città" />
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"6px", marginBottom:"8px"}}>
+          <div>
+            <label style={lbl}>KM ANDATA</label>
+            {app.kmLoading
+              ? <div style={{...iStyle, color:"#555", textAlign:"center"}}>…</div>
+              : <input type="number" style={{...iStyle, color:app.km?"#f59e0b":"#e5e0d8"}}
+                  placeholder="0" value={app.km??""} onChange={e=>onUpdate(app.id,"km",e.target.value)} />
+            }
+            {app.kmError && <div style={{color:"#f87171", fontSize:"10px", marginTop:"2px"}}>{app.kmError}</div>}
+          </div>
+          <div>
+            <label style={lbl}>DURATA</label>
+            <select style={iStyle} value={app.durataLavoro}
+              onChange={e=>onUpdate(app.id,"durataLavoro",e.target.value)}>
+              {[30,60,90,120,150,180,240,300,360].map(v=>(
+                <option key={v} value={v}>{minToHHMM(v)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>INIZIO</label>
+            <input type="time" style={iStyle} value={app.orarioInizio}
+              onChange={e=>onUpdate(app.id,"orarioInizio",e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{marginBottom:"8px"}}>
+          <label style={lbl}>FATTURA VERISURE (€)</label>
+          <input type="number" style={{...iStyle, color:"#4ade80"}} placeholder="0.00"
+            value={app.fattura} onChange={e=>onUpdate(app.id,"fattura",e.target.value)} />
+        </div>
+
+        <button onClick={()=>setShowExtra(s=>!s)} style={{
+          background:"transparent", border:`1px solid ${showExtra?"#b45309":"#333"}`,
+          color:showExtra?"#f59e0b":"#555", padding:"5px 10px", fontSize:"11px",
+          fontFamily:"inherit", cursor:"pointer", letterSpacing:"0.08em", width:"100%", textAlign:"left"
+        }}>
+          {showExtra ? "▲ chiudi extra dispositivi" : "▼ + dispositivi extra sul posto"}
+        </button>
+        {showExtra && <ExtraDispositivi extra={app.extraDisp||[]}
+          onChange={val=>onUpdate(app.id,"extraDisp",val)} />}
+
+        <div style={{marginTop:"8px"}}>
+          <label style={lbl}>NOTE</label>
+          <input style={iStyle} placeholder="Note" value={app.note}
+            onChange={e=>onUpdate(app.id,"note",e.target.value)} />
+        </div>
+      </div>
+
+      {(app.km||app.fattura) && (
+        <div style={{margin:"0 10px 10px", border:"1px solid #1a1a1a", background:"#050505", padding:"8px", fontSize:"12px"}}>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", rowGap:"4px", color:"#555"}}>
+            <span>Viaggio A/R:</span>
+            <span style={{color:"#999"}}>{calc.km*2} km · {minToHHMM(calc.tempoViaggio*2)}</span>
+            <span>Costo trasferta:</span>
+            <span style={{color:"#f59e0b"}}>–€{calc.costoViaggio.toFixed(2)}</span>
+            <span>Fattura base:</span>
+            <span style={{color:"#4ade80"}}>€{fmt(app.fattura)}</span>
+            {calc.extraTot>0 && <>
+              <span>Extra dispositivi:</span>
+              <span style={{color:"#4ade80"}}>+€{calc.extraTot.toFixed(2)}</span>
+            </>}
+            <span>Tempo totale:</span>
+            <span style={{color:"#999"}}>{minToHHMM(calc.tempoTotale)} → fine {minToTime(endMin)}</span>
+          </div>
+          {app.fattura && (
+            <div style={{marginTop:"6px", paddingTop:"6px", borderTop:"1px solid #1a1a1a",
+              display:"flex", justifyContent:"space-between"}}>
+              <span style={{color:"#555"}}>Utile lordo:</span>
+              <span style={{fontWeight:"bold", color:calc.utile>=0?"#4ade80":"#f87171"}}>€{calc.utile.toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {overlap && (
+        <div style={{margin:"0 10px 10px", border:"1px solid #7f1d1d", background:"#1a0808",
+          color:"#f87171", fontSize:"11px", padding:"6px 8px"}}>
+          ⚠ SOVRAPPOSIZIONE — intervento precedente finisce alle {minToTime(prevEndMin)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DaySummary({ apps, settings }) {
+  if (apps.length===0) return null;
+  let totFattura=0, totExtra=0, totSpese=0, totKm=0, totTempo=0;
+  apps.forEach(a=>{
+    const c=calcApp(a,settings);
+    totFattura+=parseFloat(a.fattura)||0;
+    totExtra+=c.extraTot; totSpese+=c.costoViaggio;
+    totKm+=c.km*2; totTempo+=c.tempoTotale;
+  });
+  const totRicavo=totFattura+totExtra, totUtile=totRicavo-totSpese;
+
+  return (
+    <div style={{border:"1px solid #78350f", background:"#0d0d0d", padding:"12px", marginTop:"4px", borderRadius:"2px"}}>
+      <div style={{color:"#f59e0b", fontSize:"11px", letterSpacing:"0.12em", marginBottom:"10px"}}>◈ RIEPILOGO GIORNATA</div>
+      <div style={{fontSize:"13px"}}>
+        {[["Interventi",apps.length],["Km totali A/R",`${totKm} km`],["Tempo in campo",minToHHMM(totTempo)]].map(([k,v])=>(
+          <div key={k} style={{display:"flex", justifyContent:"space-between", color:"#555", marginBottom:"4px"}}>
+            <span>{k}</span><span style={{color:"#888"}}>{v}</span>
+          </div>
+        ))}
+        <div style={{borderTop:"1px solid #222", marginTop:"8px", paddingTop:"8px"}}>
+          <div style={{display:"flex", justifyContent:"space-between", color:"#555", marginBottom:"4px"}}>
+            <span>Fattura base tot.</span><span style={{color:"#4ade80"}}>€{fmt(totFattura)}</span>
+          </div>
+          {totExtra>0&&(
+            <div style={{display:"flex", justifyContent:"space-between", color:"#555", marginBottom:"4px"}}>
+              <span>Extra dispositivi</span><span style={{color:"#4ade80"}}>+€{totExtra.toFixed(2)}</span>
+            </div>
+          )}
+          <div style={{display:"flex", justifyContent:"space-between", color:"#555", marginBottom:"4px"}}>
+            <span>Spese viaggio (non det.)</span><span style={{color:"#f59e0b"}}>–€{totSpese.toFixed(2)}</span>
+          </div>
+          <div style={{display:"flex", justifyContent:"space-between", fontSize:"15px", fontWeight:"bold",
+            marginTop:"8px", paddingTop:"8px", borderTop:"1px solid #333"}}>
+            <span style={{color:"#d6d3cf"}}>UTILE LORDO</span>
+            <span style={{color:totUtile>=0?"#4ade80":"#f87171"}}>€{totUtile.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [apps, setApps] = useState([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [mapsReady, setMapsReady] = useState(window._mapsReady);
+  const [data, setData] = useState(new Date().toISOString().split("T")[0]);
+
+  useEffect(()=>{ window._mapsReadyPromise.then(()=>setMapsReady(true)); },[]);
+
+  const fetchKm = useCallback((id, destAddress) => {
+    if (!window.google?.maps) return;
+    setApps(prev=>prev.map(a=>a.id===id?{...a,kmLoading:true,kmError:null}:a));
+    const svc = new window.google.maps.DistanceMatrixService();
+    svc.getDistanceMatrix({
+      origins:[settings.cittaBase], destinations:[destAddress],
+      travelMode:window.google.maps.TravelMode.DRIVING,
+      unitSystem:window.google.maps.UnitSystem.METRIC,
+    },(res,status)=>{
+      if(status==="OK"&&res.rows[0].elements[0].status==="OK"){
+        const km = Math.round(res.rows[0].elements[0].distance.value/100)/10;
+        setApps(prev=>prev.map(a=>a.id===id?{...a,km,kmLoading:false}:a));
+      } else {
+        setApps(prev=>prev.map(a=>a.id===id?{...a,kmLoading:false,kmError:"Calcolo fallito — inserisci km manuale"}:a));
+      }
+    });
+  },[settings.cittaBase]);
+
+  const addApp = () => setApps(prev=>{
+    const last=prev[prev.length-1]; const na=emptyApp();
+    if(last){ const c=calcApp(last,settings); na.orarioInizio=minToTime(timeToMin(last.orarioInizio)+c.tempoTotale+15); }
+    return [...prev,na];
+  });
+
+  const updateApp = (id,k,v) => setApps(prev=>prev.map(a=>a.id===id?{...a,[k]:v}:a));
+  const removeApp = id => setApps(prev=>prev.filter(a=>a.id!==id));
+  const getEndMin = app => { const c=calcApp(app,settings); return timeToMin(app.orarioInizio)+c.tempoTotale; };
+
+  return (
+    <div style={{padding:"14px", maxWidth:"460px", margin:"0 auto", minHeight:"100vh"}}>
+      {/* Header */}
+      <div style={{marginBottom:"14px"}}>
+        <div style={{color:"#f59e0b", fontSize:"10px", letterSpacing:"0.2em", marginBottom:"6px"}}>
+          AGENDA INSTALLAZIONI ALLARMI
+        </div>
+        <div style={{display:"flex", gap:"6px", alignItems:"center", flexWrap:"wrap"}}>
+          <input type="date" value={data} onChange={e=>setData(e.target.value)}
+            style={{...iStyle, width:"auto", color:"#f59e0b", flex:"0 0 auto"}} />
+          <button onClick={()=>setShowSettings(s=>!s)} style={{
+            background:"transparent", border:`1px solid ${showSettings?"#b45309":"#333"}`,
+            color:showSettings?"#f59e0b":"#666", padding:"6px 10px", fontSize:"11px",
+            fontFamily:"inherit", cursor:"pointer", letterSpacing:"0.08em"
+          }}>{showSettings?"✕ chiudi":"⚙ parametri"}</button>
+          <span style={{fontSize:"10px", color:mapsReady?"#4ade80":"#555", marginLeft:"auto"}}>
+            {mapsReady?"● Maps OK":"○ Maps…"}
+          </span>
+        </div>
+      </div>
+
+      {showSettings && (
+        <div style={{border:"1px solid #222", background:"#0d0d0d", padding:"10px", marginBottom:"12px"}}>
+          <div style={{color:"#f59e0b", fontSize:"11px", letterSpacing:"0.1em", marginBottom:"8px"}}>⚙ PARAMETRI</div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px"}}>
+            <div>
+              <label style={lbl}>COSTO €/KM</label>
+              <input type="number" step="0.01" style={iStyle} value={settings.costoKm}
+                onChange={e=>setSettings(s=>({...s,costoKm:parseFloat(e.target.value)}))} />
+            </div>
+            <div>
+              <label style={lbl}>VELOCITÀ (km/h)</label>
+              <input type="number" style={iStyle} value={settings.velocitaMedia}
+                onChange={e=>setSettings(s=>({...s,velocitaMedia:parseFloat(e.target.value)}))} />
+            </div>
+            <div style={{gridColumn:"1/-1"}}>
+              <label style={lbl}>CITTÀ DI PARTENZA</label>
+              <input style={iStyle} value={settings.cittaBase}
+                onChange={e=>setSettings(s=>({...s,cittaBase:e.target.value}))} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {apps.map((app,idx)=>(
+        <AppCard key={app.id} app={app} idx={idx} settings={settings}
+          onUpdate={updateApp} onRemove={removeApp}
+          prevEndMin={idx>0?getEndMin(apps[idx-1]):null}
+          fetchKm={fetchKm} />
+      ))}
+
+      <button onClick={addApp} style={{
+        width:"100%", background:"transparent", border:"1px dashed #2a2a2a",
+        color:"#444", padding:"11px", fontFamily:"inherit", fontSize:"11px",
+        cursor:"pointer", letterSpacing:"0.12em", marginBottom:"12px",
+        transition:"all 0.15s"
+      }}
+        onMouseOver={e=>{e.currentTarget.style.borderColor="#f59e0b";e.currentTarget.style.color="#f59e0b";}}
+        onMouseOut={e=>{e.currentTarget.style.borderColor="#2a2a2a";e.currentTarget.style.color="#444";}}
+      >+ AGGIUNGI INTERVENTO</button>
+
+      <DaySummary apps={apps} settings={settings} />
+
+      <div style={{color:"#222", fontSize:"10px", textAlign:"center", marginTop:"16px", letterSpacing:"0.05em"}}>
+        {settings.cittaBase} · €{settings.costoKm}/km · {settings.velocitaMedia} km/h
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
