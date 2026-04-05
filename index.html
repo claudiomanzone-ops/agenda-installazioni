@@ -17,6 +17,9 @@ input, select { font-family: inherit; }
 .pac-item:hover { background: #222; }
 .pac-item-query { color: #f59e0b; }
 .pac-matched { color: #f59e0b; }
+table { border-collapse: collapse; width: 100%; }
+td, th { padding: 6px 8px; text-align: left; border-bottom: 1px solid #1a1a1a; font-size: 11px; }
+th { color: #555; font-weight: normal; letter-spacing: 0.08em; }
 </style>
 </head>
 <body>
@@ -29,11 +32,17 @@ window._mapsReadyPromise = new Promise(r => { window._mapsReadyResolve = r; if(w
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 const DEFAULT_SETTINGS = { costoKm: 0.35, velocitaMedia: 60, cittaBase: "Genova, Italia" };
-function minToHHMM(min) { if (!min && min !== 0) return "—"; const h = Math.floor(min/60), m = min%60; return h > 0 ? `${h}h${m > 0 ? " "+m+"m" : ""}` : `${m}m`; }
-function timeToMin(hhmm) { const [h,m] = hhmm.split(":").map(Number); return h*60+m; }
-function minToTime(t) { const h=Math.floor(t/60)%24, m=t%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`; }
+const STORAGE_KEY = "agenda_registro";
+
+function minToHHMM(min) { if (!min && min !== 0) return "—"; const h=Math.floor(min/60),m=min%60; return h>0?`${h}h${m>0?" "+m+"m":""}`:`${m}m`; }
+function timeToMin(hhmm) { const [h,m]=hhmm.split(":").map(Number); return h*60+m; }
+function minToTime(t) { const h=Math.floor(t/60)%24,m=t%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`; }
 function fmt(n) { return (parseFloat(n)||0).toFixed(2); }
-const emptyApp = () => ({ id: Date.now()+Math.random(), cliente:"", indirizzo:"", km:null, kmLoading:false, kmError:null, durataLavoro:90, fattura:"", orarioInizio:"08:00", note:"", extraDisp:[] });
+function fmtData(d) { const [y,m,g]=d.split("-"); return `${g}/${m}/${y}`; }
+function meseAnno(d) { const [y,m]=d.split("-"); const mesi=["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"]; return `${mesi[parseInt(m)-1]} ${y}`; }
+
+const emptyApp = () => ({ id:Date.now()+Math.random(), cliente:"", indirizzo:"", km:null, kmLoading:false, kmError:null, durataLavoro:90, fattura:"", orarioInizio:"08:00", note:"", extraDisp:[] });
+
 function calcApp(app, s) {
   const km=parseFloat(app.km)||0, fattura=parseFloat(app.fattura)||0;
   const extraTot=(app.extraDisp||[]).reduce((acc,d)=>acc+(parseFloat(d.prezzo)||0),0);
@@ -41,8 +50,14 @@ function calcApp(app, s) {
   const cv=km*2*s.costoKm, dl=parseInt(app.durataLavoro)||0;
   return {km,fattura,extraTot,ricavoTot:fattura+extraTot,tempoViaggio:tv,costoViaggio:cv,durataLavoro:dl,tempoTotale:tv*2+dl,utile:fattura+extraTot-cv};
 }
+
+function loadRegistro() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}"); } catch(e) { return {}; } }
+function saveRegistro(r) { localStorage.setItem(STORAGE_KEY, JSON.stringify(r)); }
+
 const iStyle = { width:"100%", background:"#111", border:"1px solid #333", color:"#e5e0d8", padding:"7px 9px", fontSize:"14px", fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
 const lbl = { color:"#555", fontSize:"11px", display:"block", marginBottom:"4px", letterSpacing:"0.07em" };
+const btnBase = (active) => ({ background:"transparent", border:`1px solid ${active?"#92400e":"#2a2a2a"}`, color:active?"#f59e0b":"#555", padding:"6px 12px", fontSize:11, fontFamily:"inherit", cursor:"pointer", letterSpacing:"0.08em" });
+
 function AddressInput({ value, onChange, onPlaceSelected }) {
   const ref=useRef(null), acRef=useRef(null);
   const [ready,setReady]=useState(window._mapsReady);
@@ -52,8 +67,9 @@ function AddressInput({ value, onChange, onPlaceSelected }) {
     acRef.current=new window.google.maps.places.Autocomplete(ref.current,{componentRestrictions:{country:"it"},fields:["formatted_address"]});
     acRef.current.addListener("place_changed",()=>{ const p=acRef.current.getPlace(); if(p?.formatted_address){onChange(p.formatted_address);onPlaceSelected(p.formatted_address);} });
   },[ready]);
-  return <input ref={ref} value={value} onChange={e=>onChange(e.target.value)} placeholder={ready?"Indirizzo — autocompletamento attivo":"Indirizzo"} style={iStyle} />;
+  return <input ref={ref} value={value} onChange={e=>onChange(e.target.value)} placeholder={ready?"Indirizzo — autocompletamento attivo":"Indirizzo"} style={iStyle}/>;
 }
+
 function ExtraDispositivi({ extra, onChange }) {
   const add=()=>onChange([...extra,{id:Date.now(),nome:"",prezzo:""}]);
   const rem=id=>onChange(extra.filter(d=>d.id!==id));
@@ -77,6 +93,7 @@ function ExtraDispositivi({ extra, onChange }) {
     </div>
   );
 }
+
 function AppCard({ app, idx, settings, onUpdate, onRemove, prevEndMin, fetchKm }) {
   const calc=calcApp(app,settings);
   const startMin=timeToMin(app.orarioInizio), endMin=startMin+calc.tempoTotale;
@@ -129,6 +146,229 @@ function AppCard({ app, idx, settings, onUpdate, onRemove, prevEndMin, fetchKm }
         </div>
       )}
       {overlap&&<div style={{margin:"0 12px 12px",border:"1px solid #7f1d1d",background:"#1a0808",color:"#f87171",fontSize:11,padding:"6px 8px"}}>⚠ SOVRAPPOSIZIONE — precedente finisce {minToTime(prevEndMin)}</div>}
+    </div>
+  );
+}
+
+function RegistroMensile({ registro, onDelete, meseCorrente, onEsporta, onImporta }) {
+  const fileRef = useRef(null);
+  const [msg, setMsg] = useState(null);
+  const [meseVista, setMeseVista] = useState(meseCorrente);
+  const tuttiMesi=[...new Set(Object.keys(registro).map(d=>d.slice(0,7)))].sort().reverse();
+
+  const giorni=Object.entries(registro).filter(([d])=>d.startsWith(meseVista)).sort(([a],[b])=>a.localeCompare(b));
+  let totF=0,totE=0,totS=0,totU=0;
+  giorni.forEach(([,g])=>{ totF+=g.fattura; totE+=g.extra; totS+=g.spese; totU+=g.utile; });
+
+  const handleImporta=(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      try {
+        const data=JSON.parse(ev.target.result);
+        onImporta(data);
+        setMsg("✓ Backup importato");
+        setTimeout(()=>setMsg(null),3000);
+      } catch(err) {
+        setMsg("✗ File non valido");
+        setTimeout(()=>setMsg(null),3000);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  };
+
+  return (
+    <div style={{border:"1px solid #1a1a1a",background:"#0a0a0a",padding:14,marginTop:4,borderRadius:2}}>
+      <div style={{color:"#f59e0b",fontSize:10,letterSpacing:"0.15em",marginBottom:10}}>▦ REGISTRO MENSILE</div>
+
+      {/* Backup */}
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={onEsporta} style={{...btnBase(false),fontSize:10,padding:"5px 10px",borderColor:"#1a4a2a",color:"#4ade80"}}>
+          ↓ esporta backup
+        </button>
+        <button onClick={()=>fileRef.current.click()} style={{...btnBase(false),fontSize:10,padding:"5px 10px",borderColor:"#2a2a1a",color:"#f59e0b"}}>
+          ↑ importa backup
+        </button>
+        <input ref={fileRef} type="file" accept=".json" onChange={handleImporta} style={{display:"none"}}/>
+        {msg&&<span style={{fontSize:11,color:msg.startsWith("✓")?"#4ade80":"#f87171"}}>{msg}</span>}
+      </div>
+
+      {tuttiMesi.length===0
+        ? <div style={{color:"#333",fontSize:12}}>Nessuna giornata registrata</div>
+        : <>
+          {/* Selettore mese */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+            {tuttiMesi.map(m=>(
+              <button key={m} onClick={()=>setMeseVista(m)} style={{...btnBase(m===meseVista),padding:"4px 10px",fontSize:10}}>
+                {meseAnno(m+"-01")}
+              </button>
+            ))}
+          </div>
+
+          {giorni.length===0
+            ? <div style={{color:"#333",fontSize:12}}>Nessun dato per questo mese</div>
+            : <div style={{overflowX:"auto"}}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Clienti</th>
+                    <th style={{textAlign:"right"}}>Fattura</th>
+                    <th style={{textAlign:"right"}}>Extra</th>
+                    <th style={{textAlign:"right"}}>Spese</th>
+                    <th style={{textAlign:"right"}}>Utile</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {giorni.map(([data,g])=>(
+                    <tr key={data}>
+                      <td style={{color:"#888",whiteSpace:"nowrap"}}>{fmtData(data)}</td>
+                      <td style={{color:"#ccc",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.clienti.filter(Boolean).join(", ")||"—"}</td>
+                      <td style={{color:"#4ade80",textAlign:"right",whiteSpace:"nowrap"}}>€{fmt(g.fattura)}</td>
+                      <td style={{color:g.extra>0?"#4ade80":"#333",textAlign:"right",whiteSpace:"nowrap"}}>{g.extra>0?`+€${fmt(g.extra)}`:"—"}</td>
+                      <td style={{color:"#f59e0b",textAlign:"right",whiteSpace:"nowrap"}}>–€{fmt(g.spese)}</td>
+                      <td style={{textAlign:"right",whiteSpace:"nowrap",fontWeight:"bold",color:g.utile>=0?"#4ade80":"#f87171"}}>€{fmt(g.utile)}</td>
+                      <td><button onClick={()=>onDelete(data)} style={{background:"transparent",border:"none",color:"#333",cursor:"pointer",fontSize:12}}>✕</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:"1px solid #333"}}>
+                    <td colSpan="2" style={{color:"#555",paddingTop:8,fontSize:10}}>TOTALE {meseAnno(meseVista+"-01").toUpperCase()}</td>
+                    <td style={{color:"#4ade80",textAlign:"right",fontWeight:"bold",paddingTop:8}}>€{fmt(totF)}</td>
+                    <td style={{color:"#4ade80",textAlign:"right",fontWeight:"bold",paddingTop:8}}>{totE>0?`+€${fmt(totE)}`:"—"}</td>
+                    <td style={{color:"#f59e0b",textAlign:"right",fontWeight:"bold",paddingTop:8}}>–€{fmt(totS)}</td>
+                    <td style={{color:totU>=0?"#4ade80":"#f87171",textAlign:"right",fontSize:14,fontWeight:"bold",paddingTop:8}}>€{fmt(totU)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          }
+        </>
+      }
+    </div>
+  );
+}
+
+function App() {
+  const [settings,setSettings]=useState(DEFAULT_SETTINGS);
+  const [apps,setApps]=useState([]);
+  const [showS,setShowS]=useState(false);
+  const [showR,setShowR]=useState(false);
+  const [mapsReady,setMapsReady]=useState(window._mapsReady);
+  const [data,setData]=useState(new Date().toISOString().split("T")[0]);
+  const [registro,setRegistro]=useState(loadRegistro);
+
+  useEffect(()=>{ window._mapsReadyPromise.then(()=>setMapsReady(true)); },[]);
+
+  useEffect(()=>{
+    if(apps.length===0) return;
+    const hasData=apps.some(a=>a.fattura||a.km);
+    if(!hasData) return;
+    let tF=0,tE=0,tS=0; const clienti=[];
+    apps.forEach(a=>{ const c=calcApp(a,settings); tF+=parseFloat(a.fattura)||0; tE+=c.extraTot; tS+=c.costoViaggio; if(a.cliente) clienti.push(a.cliente); });
+    const rec={clienti,fattura:tF,extra:tE,spese:tS,utile:tF+tE-tS,interventi:apps.length};
+    setRegistro(prev=>{ const n={...prev,[data]:rec}; saveRegistro(n); return n; });
+  },[apps,data,settings]);
+
+  const fetchKm=useCallback((id,dest)=>{
+    if(!window.google?.maps) return;
+    setApps(p=>p.map(a=>a.id===id?{...a,kmLoading:true,kmError:null}:a));
+    new window.google.maps.DistanceMatrixService().getDistanceMatrix(
+      {origins:[settings.cittaBase],destinations:[dest],travelMode:"DRIVING",unitSystem:0},
+      (res,st)=>{
+        if(st==="OK"&&res.rows[0].elements[0].status==="OK"){
+          const km=Math.round(res.rows[0].elements[0].distance.value/100)/10;
+          setApps(p=>p.map(a=>a.id===id?{...a,km,kmLoading:false}:a));
+        } else { setApps(p=>p.map(a=>a.id===id?{...a,kmLoading:false,kmError:true}:a)); }
+      }
+    );
+  },[settings.cittaBase]);
+
+  const addApp=()=>setApps(p=>{ const last=p[p.length-1],na=emptyApp(); if(last){const c=calcApp(last,settings);na.orarioInizio=minToTime(timeToMin(last.orarioInizio)+c.tempoTotale+15);} return [...p,na]; });
+  const updateApp=(id,k,v)=>setApps(p=>p.map(a=>a.id===id?{...a,[k]:v}:a));
+  const removeApp=id=>setApps(p=>p.filter(a=>a.id!==id));
+  const getEndMin=app=>{ const c=calcApp(app,settings); return timeToMin(app.orarioInizio)+c.tempoTotale; };
+  const deleteGiorno=d=>{ setRegistro(prev=>{ const n={...prev}; delete n[d]; saveRegistro(n); return n; }); };
+
+  const esportaBackup=()=>{
+    const json=JSON.stringify(registro,null,2);
+    const blob=new Blob([json],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=`agenda_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const importaBackup=(data)=>{
+    setRegistro(prev=>{ const merged={...prev,...data}; saveRegistro(merged); return merged; });
+  };
+
+  let tF=0,tE=0,tS=0,tK=0,tT=0;
+  apps.forEach(a=>{ const c=calcApp(a,settings); tF+=parseFloat(a.fattura)||0; tE+=c.extraTot; tS+=c.costoViaggio; tK+=c.km*2; tT+=c.tempoTotale; });
+  const tU=tF+tE-tS;
+
+  return (
+    <div style={{fontFamily:"'IBM Plex Mono','Courier New',monospace",background:"#080808",minHeight:"100vh",color:"#d6d3cf",padding:14,maxWidth:480,margin:"0 auto"}}>
+      <div style={{marginBottom:14}}>
+        <div style={{color:"#f59e0b",fontSize:10,letterSpacing:"0.2em",marginBottom:6}}>AGENDA INSTALLAZIONI ALLARMI</div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <input type="date" value={data} onChange={e=>setData(e.target.value)} style={{...iStyle,width:"auto",color:"#f59e0b"}}/>
+          <button onClick={()=>{setShowS(s=>!s);setShowR(false);}} style={btnBase(showS)}>{showS?"✕":"⚙"}</button>
+          <button onClick={()=>{setShowR(s=>!s);setShowS(false);}} style={btnBase(showR)}>{showR?"✕ registro":"▦ registro"}</button>
+          <span style={{fontSize:10,color:mapsReady?"#4ade80":"#444",marginLeft:"auto"}}>{mapsReady?"● Maps":"○…"}</span>
+        </div>
+      </div>
+
+      {showS&&(
+        <div style={{border:"1px solid #1e1e1e",background:"#0c0c0c",padding:10,marginBottom:12}}>
+          <div style={{color:"#f59e0b",fontSize:10,letterSpacing:"0.1em",marginBottom:8}}>⚙ PARAMETRI</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <div><label style={lbl}>€/KM</label><input type="number" step="0.01" style={iStyle} value={settings.costoKm} onChange={e=>setSettings(s=>({...s,costoKm:parseFloat(e.target.value)}))}/></div>
+            <div><label style={lbl}>VELOCITÀ km/h</label><input type="number" style={iStyle} value={settings.velocitaMedia} onChange={e=>setSettings(s=>({...s,velocitaMedia:parseFloat(e.target.value)}))}/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={lbl}>PARTENZA</label><input style={iStyle} value={settings.cittaBase} onChange={e=>setSettings(s=>({...s,cittaBase:e.target.value}))}/></div>
+          </div>
+        </div>
+      )}
+
+      {showR&&<RegistroMensile registro={registro} onDelete={deleteGiorno} meseCorrente={data.slice(0,7)} onEsporta={esportaBackup} onImporta={importaBackup}/>}
+
+      {!showR&&<>
+        {apps.map((app,idx)=><AppCard key={app.id} app={app} idx={idx} settings={settings} onUpdate={updateApp} onRemove={removeApp} prevEndMin={idx>0?getEndMin(apps[idx-1]):null} fetchKm={fetchKm}/>)}
+        <button onClick={addApp} style={{width:"100%",background:"transparent",border:"1px dashed #1e1e1e",color:"#333",padding:12,fontFamily:"inherit",fontSize:12,cursor:"pointer",letterSpacing:"0.12em",marginBottom:12}}
+          onMouseOver={e=>{e.currentTarget.style.borderColor="#f59e0b";e.currentTarget.style.color="#f59e0b";}}
+          onMouseOut={e=>{e.currentTarget.style.borderColor="#1e1e1e";e.currentTarget.style.color="#333";}}>
+          + AGGIUNGI INTERVENTO
+        </button>
+        {apps.length>0&&apps.some(a=>a.fattura||a.km)&&(
+          <div style={{border:"1px solid #78350f",background:"#0d0d0d",padding:14,borderRadius:2}}>
+            <div style={{color:"#f59e0b",fontSize:10,letterSpacing:"0.15em",marginBottom:10}}>◈ RIEPILOGO {fmtData(data)}</div>
+            {[["Interventi",apps.length],["Km A/R totali",`${tK} km`],["Tempo totale",minToHHMM(tT)]].map(([k,v])=>(
+              <div key={k} style={{display:"flex",justifyContent:"space-between",color:"#444",marginBottom:4,fontSize:13}}><span>{k}</span><span style={{color:"#777"}}>{v}</span></div>
+            ))}
+            <div style={{borderTop:"1px solid #1e1e1e",marginTop:8,paddingTop:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",color:"#444",marginBottom:4,fontSize:13}}><span>Fattura base</span><span style={{color:"#4ade80"}}>€{fmt(tF)}</span></div>
+              {tE>0&&<div style={{display:"flex",justifyContent:"space-between",color:"#444",marginBottom:4,fontSize:13}}><span>Extra dispositivi</span><span style={{color:"#4ade80"}}>+€{tE.toFixed(2)}</span></div>}
+              <div style={{display:"flex",justifyContent:"space-between",color:"#444",marginBottom:4,fontSize:13}}><span>Spese viaggio</span><span style={{color:"#f59e0b"}}>–€{tS.toFixed(2)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:16,fontWeight:"bold",marginTop:10,paddingTop:10,borderTop:"1px solid #2a2a2a"}}>
+                <span style={{color:"#ccc"}}>UTILE LORDO</span>
+                <span style={{color:tU>=0?"#4ade80":"#f87171"}}>€{tU.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </>}
+      <div style={{color:"#1a1a1a",fontSize:10,textAlign:"center",marginTop:14}}>{settings.cittaBase} · €{settings.costoKm}/km</div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>⚠ SOVRAPPOSIZIONE — precedente finisce {minToTime(prevEndMin)}</div>}
     </div>
   );
 }
