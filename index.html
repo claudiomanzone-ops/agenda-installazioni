@@ -316,36 +316,46 @@ function saveData(data) {
 
 // ─── DISTANCE MATRIX ─────────────────────────────────────────────────────────
 // Calcola km totali percorso: casa → i1 → i2 → … → casa
-// Ritorna { km, hasToll, kmHighway (stima) }
-async function calcolaPercorso(cittaBase, indirizzi) {
-  const validi = indirizzi.filter(a => a && a.trim());
-  if (validi.length === 0) return { km: 0, hasToll: false, kmHighway: 0 };
+// Usa DistanceMatrixService JS (no CORS, funziona da browser)
+function calcolaPercorso(cittaBase, indirizzi) {
+  return new Promise((resolve) => {
+    const validi = indirizzi.filter(a => a && a.trim());
+    if (validi.length === 0) { resolve({ km: 0 }); return; }
 
-  // Costruiamo le tappe: [casa, ...interventi, casa]
-  const tappe = [cittaBase, ...validi, cittaBase];
-  let totalKm = 0;
-  let totalHighwayKm = 0;
+    if (!window.google || !window.google.maps) { resolve({ km: 0 }); return; }
 
-  // Chiamate sequenziali: ogni coppia consecutiva
-  for (let i = 0; i < tappe.length - 1; i++) {
-    const origin = encodeURIComponent(tappe[i]);
-    const dest = encodeURIComponent(tappe[i + 1]);
-    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${dest}&mode=driving&language=it&key=${GMAPS_KEY}`;
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      const el = data.rows?.[0]?.elements?.[0];
-      if (el?.status === 'OK') {
-        const segKm = el.distance.value / 1000;
-        totalKm += segKm;
-        // stima autostrada: se durata < km/60 allora presumibilmente autostrada
-        // Approssimazione: nessuna info nativa, usiamo 30% del totale come stima
-        // (sarà sovrascrivibile dall'utente)
+    const tappe = [cittaBase, ...validi, cittaBase];
+    const service = new window.google.maps.DistanceMatrixService();
+    let totalKm = 0;
+    let idx = 0;
+
+    function prossimoSegmento() {
+      if (idx >= tappe.length - 1) {
+        resolve({ km: Math.round(totalKm * 10) / 10 });
+        return;
       }
-    } catch {}
-  }
+      service.getDistanceMatrix(
+        {
+          origins: [tappe[idx]],
+          destinations: [tappe[idx + 1]],
+          travelMode: window.google.maps.TravelMode.DRIVING,
+          unitSystem: window.google.maps.UnitSystem.METRIC,
+        },
+        (response, status) => {
+          if (status === 'OK') {
+            const el = response.rows?.[0]?.elements?.[0];
+            if (el?.status === 'OK') {
+              totalKm += el.distance.value / 1000;
+            }
+          }
+          idx++;
+          prossimoSegmento();
+        }
+      );
+    }
 
-  return { km: Math.round(totalKm * 10) / 10 };
+    prossimoSegmento();
+  });
 }
 
 // ─── COMPONENTE PRINCIPALE ───────────────────────────────────────────────────
