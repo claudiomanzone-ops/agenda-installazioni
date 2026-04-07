@@ -6,35 +6,906 @@
 <title>Agenda Installazioni</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCygUawe-ofhq2BtB-l0SvQnM3jlGmqCyo&libraries=places&callback=initMaps" async defer></script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #12122a; color: #e8e8f0; font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
-input, select, button { font-family: inherit; }
-.pac-container { background:#fff; border:1px solid #ccc; font-family:'IBM Plex Mono',monospace; box-shadow:0 2px 8px rgba(0,0,0,.1); }
-.pac-item { color:#444; border-top:1px solid #eee; padding:7px 10px; cursor:pointer; font-size:12px; }
-.pac-item:hover { background:#fff8f0; }
-.pac-item-query,.pac-matched { color:2dd4bf; }
-table { border-collapse:collapse; width:100%; }
-td,th { padding:7px 8px; text-align:left; border-bottom:1px solid #eee; font-size:11px; }
-th { color:#888; font-weight:normal; letter-spacing:.08em; background:#fafafa; }
+  :root {
+    --bg: #12122a;
+    --card: #1e1e3a;
+    --card2: #252545;
+    --accent: #2dd4bf;
+    --accent-dim: rgba(45,212,191,0.15);
+    --accent-border: rgba(45,212,191,0.35);
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --text-muted: #64748b;
+    --danger: #f87171;
+    --success: #4ade80;
+    --warn: #fbbf24;
+    --border: rgba(255,255,255,0.07);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+  #root { max-width: 900px; margin: 0 auto; padding: 16px; }
+
+  /* HEADER */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .header h1 {
+    font-size: 20px; font-weight: 700; color: var(--accent);
+    letter-spacing: -0.3px;
+  }
+  .header-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--card); border-radius: var(--radius); padding: 4px; }
+  .tab {
+    flex: 1; padding: 9px 8px; border: none; background: transparent;
+    color: var(--text-dim); border-radius: var(--radius-sm); cursor: pointer;
+    font-size: 13px; font-weight: 500; transition: all .15s;
+  }
+  .tab.active { background: var(--accent); color: #0f172a; font-weight: 700; }
+  .tab:hover:not(.active) { background: var(--card2); color: var(--text); }
+
+  /* CARDS */
+  .card {
+    background: var(--card); border-radius: var(--radius);
+    border: 1px solid var(--border); padding: 16px; margin-bottom: 12px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: var(--accent);
+    margin-bottom: 12px; display: flex; align-items: center; gap: 6px;
+  }
+
+  /* FORM */
+  .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+  .form-group label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  input, select, textarea {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-sm);
+    padding: 8px 10px; font-size: 13px; font-family: inherit;
+    transition: border-color .15s; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--accent);
+  }
+  input::placeholder { color: var(--text-muted); }
+  select option { background: var(--card); }
+
+  /* BUTTONS */
+  .btn {
+    padding: 8px 14px; border-radius: var(--radius-sm); border: none;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all .15s; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn-primary { background: var(--accent); color: #0f172a; }
+  .btn-primary:hover { background: #22c5b0; }
+  .btn-secondary { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid rgba(248,113,113,0.3); }
+  .btn-danger:hover { background: rgba(248,113,113,0.1); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* DATE NAV */
+  .date-nav {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+  }
+  .date-nav input[type=date] { flex: 1; }
+  .date-label {
+    font-size: 16px; font-weight: 700; color: var(--text); flex: 1; text-align: center;
+  }
+
+  /* INTERVENTION CARD */
+  .interv-card {
+    background: var(--card2); border-radius: var(--radius-sm);
+    border: 1px solid var(--border); padding: 14px; margin-bottom: 10px;
+    position: relative;
+  }
+  .interv-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .interv-num {
+    background: var(--accent); color: #0f172a;
+    border-radius: 50%; width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800; flex-shrink: 0;
+  }
+  .interv-addr { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; margin: 0 10px; }
+  .interv-type { font-size: 11px; color: var(--accent); font-weight: 600; }
+
+  /* RIEPILOGO */
+  .riepilogo {
+    background: var(--card2); border-radius: var(--radius-sm);
+    border: 1px solid var(--accent-border); padding: 14px; margin-top: 12px;
+  }
+  .riepilogo-title { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .riepilogo-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .riepilogo-row:last-child { border-bottom: none; }
+  .riepilogo-row.total {
+    font-weight: 700; font-size: 15px; color: var(--accent);
+    margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--accent-border);
+    border-bottom: none;
+  }
+  .riepilogo-label { color: var(--text-dim); }
+  .riepilogo-value { color: var(--text); font-weight: 600; }
+  .km-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--accent-dim); color: var(--accent);
+    border-radius: 4px; padding: 2px 7px; font-size: 11px; font-weight: 700;
+  }
+
+  /* REGISTRO MENSILE */
+  .month-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .month-table th {
+    text-align: left; padding: 8px 10px;
+    color: var(--text-muted); font-weight: 600; font-size: 11px;
+    border-bottom: 1px solid var(--border); text-transform: uppercase;
+  }
+  .month-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .month-table tr:hover td { background: var(--card2); }
+  .month-table .total-row td { font-weight: 700; color: var(--accent); background: var(--accent-dim); }
+
+  /* ARCHIVIO */
+  .archive-month {
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    margin-bottom: 8px; overflow: hidden;
+  }
+  .archive-month-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; cursor: pointer;
+    background: var(--card2);
+    transition: background .15s;
+  }
+  .archive-month-header:hover { background: #2a2a50; }
+  .archive-month-title { font-weight: 600; font-size: 14px; }
+  .archive-month-summary { font-size: 12px; color: var(--text-dim); }
+  .archive-month-body { padding: 12px 14px; }
+
+  /* IMPOSTAZIONI */
+  .settings-section { margin-bottom: 20px; }
+  .settings-section h3 { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+
+  /* ALERT / BADGE */
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 700;
+  }
+  .badge-green { background: rgba(74,222,128,0.15); color: var(--success); }
+  .badge-yellow { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .badge-red { background: rgba(248,113,113,0.15); color: var(--danger); }
+
+  /* LOADING */
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .6s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* UTILS */
+  .flex { display: flex; }
+  .gap-8 { gap: 8px; }
+  .mt-8 { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; }
+  .text-dim { color: var(--text-dim); }
+  .text-muted { color: var(--text-muted); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-right { text-align: right; }
+  .w-full { width: 100%; }
+
+  @media (max-width: 600px) {
+    .form-group { min-width: 100%; }
+    .header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .tabs { overflow-x: auto; }
+  }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script>
-// Maps init
-window._mapsReady = false;
-window.initMaps = function(){ window._mapsReady=true; if(window._mapsReadyResolve) window._mapsReadyResolve(); };
-window._mapsReadyPromise = new Promise(function(r){ window._mapsReadyResolve=r; if(window._mapsReady) r(); });
+const { useState, useEffect, useCallback, useRef } = React;
 
-// ── Shortcuts ──────────────────────────────────────────────────────────────
-var h = React.createElement;
-var useState = React.useState;
-var useEffect = React.useEffect;
-var useRef = React.useRef;
+// ─── COSTANTI ───────────────────────────────────────────────────────────────
+const GMAPS_KEY = 'AIzaSyCygUawe-ofhq2BtB-l0SvQnM3jlGmqCyo';
+const STORAGE_KEY = 'agenda_installazioni_v3';
+
+const TIPI_INTERVENTO = ['Nuova installazione','Manutenzione','Sostituzione CU','Upgrade','Altro'];
+const MESI_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+                 'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+const DEFAULT_SETTINGS = {
+  costoKm: 0.27,
+  cittaBase: 'Sori, Italia',
+  tariffa_oraria: 0,
+  pedaggi_km_rate: 0.09,
+};
+
+// ─── UTILS ──────────────────────────────────────────────────────────────────
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+function fmtEur(n) {
+  return '€ ' + (parseFloat(n) || 0).toFixed(2).replace('.', ',');
+}
+function fmtDate(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+function fmtMonthYear(dateStr) {
+  if (!dateStr) return '';
+  const [y, m] = dateStr.split('-');
+  return `${MESI_IT[parseInt(m)-1]} ${y}`;
+}
+function newIntervento() {
+  return {
+    id: Date.now() + Math.random(),
+    indirizzo: '',
+    tipo: 'Nuova installazione',
+    cliente: '',
+    note: '',
+    dispositivi_extra: 0,
+    ricavo: 0,
+    spese_extra: 0,
+  };
+}
+
+// ─── PERSISTENZA ─────────────────────────────────────────────────────────────
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { giorni: {}, settings: DEFAULT_SETTINGS };
+    const parsed = JSON.parse(raw);
+    return {
+      giorni: parsed.giorni || {},
+      settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
+    };
+  } catch { return { giorni: {}, settings: DEFAULT_SETTINGS }; }
+}
+function saveData(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+}
+
+// ─── DISTANCE MATRIX ─────────────────────────────────────────────────────────
+// Calcola km totali percorso: casa → i1 → i2 → … → casa
+// Ritorna { km, hasToll, kmHighway (stima) }
+async function calcolaPercorso(cittaBase, indirizzi) {
+  const validi = indirizzi.filter(a => a && a.trim());
+  if (validi.length === 0) return { km: 0, hasToll: false, kmHighway: 0 };
+
+  // Costruiamo le tappe: [casa, ...interventi, casa]
+  const tappe = [cittaBase, ...validi, cittaBase];
+  let totalKm = 0;
+  let totalHighwayKm = 0;
+
+  // Chiamate sequenziali: ogni coppia consecutiva
+  for (let i = 0; i < tappe.length - 1; i++) {
+    const origin = encodeURIComponent(tappe[i]);
+    const dest = encodeURIComponent(tappe[i + 1]);
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${dest}&mode=driving&language=it&key=${GMAPS_KEY}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      const el = data.rows?.[0]?.elements?.[0];
+      if (el?.status === 'OK') {
+        const segKm = el.distance.value / 1000;
+        totalKm += segKm;
+        // stima autostrada: se durata < km/60 allora presumibilmente autostrada
+        // Approssimazione: nessuna info nativa, usiamo 30% del totale come stima
+        // (sarà sovrascrivibile dall'utente)
+      }
+    } catch {}
+  }
+
+  return { km: Math.round(totalKm * 10) / 10 };
+}
+
+// ─── COMPONENTE PRINCIPALE ───────────────────────────────────────────────────
+function App() {
+  const [data, setData] = useState(() => loadData());
+  const [tab, setTab] = useState('oggi');
+  const [dataSelezionata, setDataSelezionata] = useState(today());
+  const [archivioOpen, setArchivioOpen] = useState({});
+  const [calcoloInCorso, setCalcoloInCorso] = useState(false);
+  const [exportMsg, setExportMsg] = useState('');
+
+  const { giorni, settings } = data;
+
+  function updateSettings(patch) {
+    setData(prev => {
+      const next = { ...prev, settings: { ...prev.settings, ...patch } };
+      saveData(next);
+      return next;
+    });
+  }
+
+  function getGiorno(dateStr) {
+    return giorni[dateStr] || { interventi: [], km: 0, kmHighway: 0, note_giorno: '' };
+  }
+
+  function updateGiorno(dateStr, patch) {
+    setData(prev => {
+      const old = prev.giorni[dateStr] || { interventi: [], km: 0, kmHighway: 0, note_giorno: '' };
+      const next = {
+        ...prev,
+        giorni: {
+          ...prev.giorni,
+          [dateStr]: { ...old, ...patch },
+        },
+      };
+      saveData(next);
+      return next;
+    });
+  }
+
+  function addIntervento() {
+    const g = getGiorno(dataSelezionata);
+    updateGiorno(dataSelezionata, { interventi: [...g.interventi, newIntervento()] });
+  }
+
+  function updateIntervento(idx, patch) {
+    const g = getGiorno(dataSelezionata);
+    const list = g.interventi.map((it, i) => i === idx ? { ...it, ...patch } : it);
+    updateGiorno(dataSelezionata, { interventi: list });
+  }
+
+  function removeIntervento(idx) {
+    const g = getGiorno(dataSelezionata);
+    const list = g.interventi.filter((_, i) => i !== idx);
+    updateGiorno(dataSelezionata, { interventi: list });
+  }
+
+  async function calcolaKm() {
+    const g = getGiorno(dataSelezionata);
+    const indirizzi = g.interventi.map(i => i.indirizzo).filter(Boolean);
+    if (!indirizzi.length) return;
+    setCalcoloInCorso(true);
+    try {
+      const { km } = await calcolaPercorso(settings.cittaBase, indirizzi);
+      updateGiorno(dataSelezionata, { km });
+    } catch {}
+    setCalcoloInCorso(false);
+  }
+
+  // ─── CALCOLO RIEPILOGO GIORNALIERO ───────────────────────────────────────
+  function calcolaRiepilogo(dateStr) {
+    const g = getGiorno(dateStr);
+    const km = parseFloat(g.km) || 0;
+    const kmHighway = parseFloat(g.kmHighway) || 0;
+    const speseViaggio = km * settings.costoKm;
+    const spesePedaggi = kmHighway * settings.pedaggi_km_rate;
+    const speseExtra = g.interventi.reduce((s, i) => s + (parseFloat(i.spese_extra) || 0), 0);
+    const ricavi = g.interventi.reduce((s, i) => s + (parseFloat(i.ricavo) || 0), 0);
+    const totaleSpese = speseViaggio + spesePedaggi + speseExtra;
+    return { km, kmHighway, speseViaggio, spesePedaggi, speseExtra, ricavi, totaleSpese };
+  }
+
+  // ─── CALCOLO REGISTRO MENSILE ─────────────────────────────────────────────
+  function calcolaRegistroMese(annoMese) {
+    // annoMese = 'YYYY-MM'
+    const righe = [];
+    Object.keys(giorni)
+      .filter(d => d.startsWith(annoMese))
+      .sort()
+      .forEach(d => {
+        const g = giorni[d];
+        if (!g.interventi?.length && !g.km) return;
+        const r = calcolaRiepilogo(d);
+        righe.push({ data: d, ...r, interventi: g.interventi.length });
+      });
+    const totali = righe.reduce((acc, r) => ({
+      km: acc.km + r.km,
+      speseViaggio: acc.speseViaggio + r.speseViaggio,
+      spesePedaggi: acc.spesePedaggi + r.spesePedaggi,
+      speseExtra: acc.speseExtra + r.speseExtra,
+      totaleSpese: acc.totaleSpese + r.totaleSpese,
+      ricavi: acc.ricavi + r.ricavi,
+    }), { km: 0, speseViaggio: 0, spesePedaggi: 0, speseExtra: 0, totaleSpese: 0, ricavi: 0 });
+    return { righe, totali };
+  }
+
+  // ─── ARCHIVIO MESI ───────────────────────────────────────────────────────
+  function getMesiDisponibili() {
+    const mesi = new Set();
+    Object.keys(giorni).forEach(d => {
+      const m = d.slice(0, 7);
+      const g = giorni[d];
+      if (g.interventi?.length || g.km) mesi.add(m);
+    });
+    return Array.from(mesi).sort().reverse();
+  }
+
+  // ─── BACKUP ──────────────────────────────────────────────────────────────
+  function esportaBackup() {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `agenda_backup_${today()}.json`;
+    a.click();
+  }
+
+  function importaBackup(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        const next = {
+          giorni: parsed.giorni || {},
+          settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
+        };
+        saveData(next);
+        setData(next);
+        setExportMsg('✓ Backup importato');
+        setTimeout(() => setExportMsg(''), 3000);
+      } catch { setExportMsg('⚠ Errore importazione'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  // ─── RENDER ───────────────────────────────────────────────────────────────
+  const giorno = getGiorno(dataSelezionata);
+  const riepilogo = calcolaRiepilogo(dataSelezionata);
+  const meseCorrente = dataSelezionata.slice(0, 7);
+  const mesiDisponibili = getMesiDisponibili();
+
+  return React.createElement('div', null,
+    // HEADER
+    React.createElement('div', { className: 'header' },
+      React.createElement('div', null,
+        React.createElement('h1', null, '⚡ Agenda Installazioni'),
+        React.createElement('div', { className: 'header-sub' }, 'Protecta Group · Ajax Systems'),
+      ),
+      React.createElement('div', { className: 'header-actions' },
+        React.createElement('button', { className: 'btn btn-secondary btn-sm', onClick: esportaBackup }, '⬇ Backup'),
+        React.createElement('label', { className: 'btn btn-secondary btn-sm', style: { cursor: 'pointer' } },
+          '⬆ Importa',
+          React.createElement('input', { type: 'file', accept: '.json', style: { display: 'none' }, onChange: importaBackup })
+        ),
+        exportMsg && React.createElement('span', { style: { fontSize: 12, color: 'var(--accent)', alignSelf: 'center' } }, exportMsg),
+      ),
+    ),
+
+    // TABS
+    React.createElement('div', { className: 'tabs' },
+      ['oggi', 'mese', 'archivio', 'impostazioni'].map(t =>
+        React.createElement('button', {
+          key: t, className: `tab ${tab === t ? 'active' : ''}`,
+          onClick: () => setTab(t),
+        }, t === 'oggi' ? '📋 Giorno' : t === 'mese' ? '📅 Mese' : t === 'archivio' ? '🗂 Archivio' : '⚙ Impost.')
+      )
+    ),
+
+    // ── TAB GIORNO ──────────────────────────────────────────────────────────
+    tab === 'oggi' && React.createElement('div', null,
+      // Navigazione data
+      React.createElement('div', { className: 'date-nav' },
+        React.createElement('button', {
+          className: 'btn btn-secondary btn-sm',
+          onClick: () => {
+            const d = new Date(dataSelezionata);
+            d.setDate(d.getDate() - 1);
+            setDataSelezionata(d.toISOString().slice(0, 10));
+          }
+        }, '◀'),
+        React.createElement('input', {
+          type: 'date', value: dataSelezionata,
+          onChange: e => setDataSelezionata(e.target.value),
+          style: { textAlign: 'center', maxWidth: 160 }
+        }),
+        React.createElement('button', {
+          className: 'btn btn-secondary btn-sm',
+          onClick: () => {
+            const d = new Date(dataSelezionata);
+            d.setDate(d.getDate() + 1);
+            setDataSelezionata(d.toISOString().slice(0, 10));
+          }
+        }, '▶'),
+        React.createElement('button', {
+          className: 'btn btn-secondary btn-sm',
+          onClick: () => setDataSelezionata(today())
+        }, 'Oggi'),
+      ),
+
+      // Interventi
+      giorno.interventi.map((interv, idx) =>
+        React.createElement(InterventoCard, {
+          key: interv.id, idx, interv,
+          onChange: patch => updateIntervento(idx, patch),
+          onRemove: () => removeIntervento(idx),
+        })
+      ),
+
+      // Aggiungi intervento
+      React.createElement('button', { className: 'btn btn-secondary w-full mt-8', onClick: addIntervento },
+        '+ Aggiungi intervento'
+      ),
+
+      // Sezione KM
+      React.createElement('div', { className: 'card mt-12' },
+        React.createElement('div', { className: 'card-title' }, '🗺 Chilometri e spese viaggio'),
+
+        React.createElement('div', { className: 'form-row' },
+          React.createElement('div', { className: 'form-group' },
+            React.createElement('label', null, 'KM percorsi (totale)'),
+            React.createElement('input', {
+              type: 'number', min: 0, step: 0.1,
+              value: giorno.km || '',
+              placeholder: '0',
+              onChange: e => updateGiorno(dataSelezionata, { km: e.target.value }),
+            })
+          ),
+          React.createElement('div', { className: 'form-group' },
+            React.createElement('label', null, 'KM autostradali (stima pedaggi)'),
+            React.createElement('input', {
+              type: 'number', min: 0, step: 0.1,
+              value: giorno.kmHighway || '',
+              placeholder: '0 (opzionale)',
+              onChange: e => updateGiorno(dataSelezionata, { kmHighway: e.target.value }),
+            })
+          ),
+        ),
+
+        // Bottone calcolo automatico
+        giorno.interventi.some(i => i.indirizzo) &&
+        React.createElement('button', {
+          className: 'btn btn-secondary btn-sm mt-8',
+          onClick: calcolaKm,
+          disabled: calcoloInCorso,
+        },
+          calcoloInCorso
+            ? React.createElement('span', null, React.createElement('span', { className: 'spinner' }), ' Calcolo...')
+            : `🗺 Calcola km automatico (${settings.cittaBase} → clienti → ${settings.cittaBase})`
+        ),
+
+        // Note giorno
+        React.createElement('div', { className: 'form-group mt-8' },
+          React.createElement('label', null, 'Note giorno'),
+          React.createElement('textarea', {
+            rows: 2, value: giorno.note_giorno || '', placeholder: 'Note generali...',
+            onChange: e => updateGiorno(dataSelezionata, { note_giorno: e.target.value }),
+            style: { resize: 'vertical' },
+          })
+        ),
+      ),
+
+      // Riepilogo giornaliero
+      giorno.interventi.length > 0 || riepilogo.km > 0
+        ? React.createElement(RiepilogoGiorno, { riepilogo, settings })
+        : null,
+    ),
+
+    // ── TAB MESE ────────────────────────────────────────────────────────────
+    tab === 'mese' && React.createElement('div', null,
+      React.createElement('div', { className: 'card' },
+        React.createElement('div', { className: 'card-title' }, `📅 Registro — ${fmtMonthYear(meseCorrente)}`),
+        React.createElement(RegistroMese, {
+          registro: calcolaRegistroMese(meseCorrente),
+          onClickData: d => { setDataSelezionata(d); setTab('oggi'); }
+        }),
+      ),
+    ),
+
+    // ── TAB ARCHIVIO ─────────────────────────────────────────────────────────
+    tab === 'archivio' && React.createElement('div', null,
+      mesiDisponibili.length === 0
+        ? React.createElement('div', { className: 'card', style: { color: 'var(--text-muted)', textAlign: 'center', padding: 32 } },
+          'Nessun dato archiviato.')
+        : mesiDisponibili.map(m => {
+          const reg = calcolaRegistroMese(m);
+          const open = archivioOpen[m];
+          return React.createElement('div', { key: m, className: 'archive-month' },
+            React.createElement('div', {
+              className: 'archive-month-header',
+              onClick: () => setArchivioOpen(prev => ({ ...prev, [m]: !prev[m] })),
+            },
+              React.createElement('span', { className: 'archive-month-title' }, fmtMonthYear(m)),
+              React.createElement('div', { style: { display: 'flex', gap: 12, alignItems: 'center' } },
+                React.createElement('span', { className: 'archive-month-summary' },
+                  `${reg.righe.length} giorni · ${reg.totali.km.toFixed(1)} km · ${fmtEur(reg.totali.ricavi)}`
+                ),
+                React.createElement('span', null, open ? '▲' : '▼'),
+              ),
+            ),
+            open && React.createElement('div', { className: 'archive-month-body' },
+              React.createElement(RegistroMese, {
+                registro: reg,
+                onClickData: d => { setDataSelezionata(d); setTab('oggi'); }
+              }),
+            ),
+          );
+        })
+    ),
+
+    // ── TAB IMPOSTAZIONI ─────────────────────────────────────────────────────
+    tab === 'impostazioni' && React.createElement('div', null,
+      React.createElement('div', { className: 'card' },
+        React.createElement('div', { className: 'settings-section' },
+          React.createElement('h3', null, '🏠 Partenza'),
+          React.createElement('div', { className: 'form-row' },
+            React.createElement('div', { className: 'form-group' },
+              React.createElement('label', null, 'Città/indirizzo base'),
+              React.createElement('input', {
+                type: 'text', value: settings.cittaBase,
+                placeholder: 'Sori, Italia',
+                onChange: e => updateSettings({ cittaBase: e.target.value }),
+              })
+            ),
+          ),
+        ),
+
+        React.createElement('div', { className: 'settings-section' },
+          React.createElement('h3', null, '💶 Tariffe'),
+          React.createElement('div', { className: 'form-row' },
+            React.createElement('div', { className: 'form-group' },
+              React.createElement('label', null, 'Costo/km (€) — solo costi operativi'),
+              React.createElement('input', {
+                type: 'number', min: 0, step: 0.01, value: settings.costoKm,
+                onChange: e => updateSettings({ costoKm: parseFloat(e.target.value) || 0 }),
+              }),
+              React.createElement('span', { style: { fontSize: 11, color: 'var(--text-muted)', marginTop: 3 } },
+                'Default: €0,27/km (costi vivi senza ammortamento ACI 2025 Clio 1.0 GPL)'
+              ),
+            ),
+            React.createElement('div', { className: 'form-group' },
+              React.createElement('label', null, 'Tariffa pedaggi (€/km autostrada)'),
+              React.createElement('input', {
+                type: 'number', min: 0, step: 0.01, value: settings.pedaggi_km_rate,
+                onChange: e => updateSettings({ pedaggi_km_rate: parseFloat(e.target.value) || 0 }),
+              }),
+              React.createElement('span', { style: { fontSize: 11, color: 'var(--text-muted)', marginTop: 3 } },
+                'Stima media A7/A10 Liguria. Inserire km autostradali per giorno nel campo apposito.'
+              ),
+            ),
+          ),
+        ),
+
+        React.createElement('div', { className: 'settings-section' },
+          React.createElement('h3', null, '🔑 API Google Maps'),
+          React.createElement('div', { className: 'form-row' },
+            React.createElement('div', { className: 'form-group' },
+              React.createElement('label', null, 'API Key'),
+              React.createElement('input', {
+                type: 'text', value: GMAPS_KEY, readOnly: true,
+                style: { opacity: 0.5, fontSize: 11 },
+              })
+            ),
+          ),
+        ),
+
+        React.createElement('div', { className: 'settings-section' },
+          React.createElement('h3', null, '💾 Dati'),
+          React.createElement('div', { className: 'flex gap-8' },
+            React.createElement('button', { className: 'btn btn-secondary', onClick: esportaBackup }, '⬇ Esporta backup JSON'),
+            React.createElement('label', { className: 'btn btn-secondary', style: { cursor: 'pointer' } },
+              '⬆ Importa backup',
+              React.createElement('input', { type: 'file', accept: '.json', style: { display: 'none' }, onChange: importaBackup })
+            ),
+          ),
+          React.createElement('p', { style: { fontSize: 11, color: 'var(--text-muted)', marginTop: 8 } },
+            'I dati sono salvati in localStorage. Effettua backup regolari prima di svuotare la cache.'
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+// ─── INTERVENTO CARD ────────────────────────────────────────────────────────
+function InterventoCard({ idx, interv, onChange, onRemove }) {
+  return React.createElement('div', { className: 'interv-card' },
+    React.createElement('div', { className: 'interv-header' },
+      React.createElement('div', { className: 'interv-num' }, idx + 1),
+      React.createElement('div', { className: 'interv-addr' }, interv.indirizzo || 'Nuovo intervento'),
+      React.createElement('span', { className: 'interv-type' }, interv.tipo),
+      React.createElement('button', {
+        className: 'btn btn-danger btn-sm', onClick: onRemove,
+        style: { marginLeft: 8 }
+      }, '✕'),
+    ),
+
+    React.createElement('div', { className: 'form-row' },
+      React.createElement('div', { className: 'form-group', style: { flex: 2 } },
+        React.createElement('label', null, 'Indirizzo cliente'),
+        React.createElement('input', {
+          type: 'text', value: interv.indirizzo, placeholder: 'Via Roma 1, Genova GE',
+          onChange: e => onChange({ indirizzo: e.target.value }),
+        })
+      ),
+      React.createElement('div', { className: 'form-group' },
+        React.createElement('label', null, 'Tipo intervento'),
+        React.createElement('select', {
+          value: interv.tipo,
+          onChange: e => onChange({ tipo: e.target.value }),
+        },
+          TIPI_INTERVENTO.map(t => React.createElement('option', { key: t, value: t }, t))
+        )
+      ),
+    ),
+
+    React.createElement('div', { className: 'form-row' },
+      React.createElement('div', { className: 'form-group' },
+        React.createElement('label', null, 'Nome cliente'),
+        React.createElement('input', {
+          type: 'text', value: interv.cliente, placeholder: 'Cognome Nome',
+          onChange: e => onChange({ cliente: e.target.value }),
+        })
+      ),
+      React.createElement('div', { className: 'form-group' },
+        React.createElement('label', null, 'Ricavo (€)'),
+        React.createElement('input', {
+          type: 'number', min: 0, step: 0.01, value: interv.ricavo || '',
+          placeholder: '0,00',
+          onChange: e => onChange({ ricavo: e.target.value }),
+        })
+      ),
+      React.createElement('div', { className: 'form-group' },
+        React.createElement('label', null, 'Spese extra (€)'),
+        React.createElement('input', {
+          type: 'number', min: 0, step: 0.01, value: interv.spese_extra || '',
+          placeholder: '0,00',
+          onChange: e => onChange({ spese_extra: e.target.value }),
+        })
+      ),
+    ),
+
+    React.createElement('div', { className: 'form-row' },
+      React.createElement('div', { className: 'form-group' },
+        React.createElement('label', null, 'Dispositivi extra'),
+        React.createElement('input', {
+          type: 'number', min: 0, value: interv.dispositivi_extra || '',
+          placeholder: '0',
+          onChange: e => onChange({ dispositivi_extra: e.target.value }),
+        })
+      ),
+      React.createElement('div', { className: 'form-group', style: { flex: 2 } },
+        React.createElement('label', null, 'Note'),
+        React.createElement('input', {
+          type: 'text', value: interv.note, placeholder: 'Note intervento...',
+          onChange: e => onChange({ note: e.target.value }),
+        })
+      ),
+    ),
+  );
+}
+
+// ─── RIEPILOGO GIORNO ───────────────────────────────────────────────────────
+function RiepilogoGiorno({ riepilogo, settings }) {
+  const { km, kmHighway, speseViaggio, spesePedaggi, speseExtra, ricavi, totaleSpese } = riepilogo;
+  const netto = ricavi - totaleSpese;
+
+  return React.createElement('div', { className: 'riepilogo' },
+    React.createElement('div', { className: 'riepilogo-title' }, '📊 Riepilogo giornaliero'),
+
+    React.createElement('div', { className: 'riepilogo-row' },
+      React.createElement('span', { className: 'riepilogo-label' }, 'Chilometri totali'),
+      React.createElement('span', { className: 'riepilogo-value' },
+        React.createElement('span', { className: 'km-badge' }, `${km.toFixed(1)} km`)
+      ),
+    ),
+    React.createElement('div', { className: 'riepilogo-row' },
+      React.createElement('span', { className: 'riepilogo-label' },
+        `Spese viaggio (${km.toFixed(1)} km × €${settings.costoKm.toFixed(2)}/km)`
+      ),
+      React.createElement('span', { className: 'riepilogo-value' }, fmtEur(speseViaggio)),
+    ),
+
+    kmHighway > 0 && React.createElement('div', { className: 'riepilogo-row' },
+      React.createElement('span', { className: 'riepilogo-label' },
+        `Pedaggi stimati (${kmHighway.toFixed(1)} km aut. × €${settings.pedaggi_km_rate.toFixed(2)}/km)`
+      ),
+      React.createElement('span', { className: 'riepilogo-value' }, fmtEur(spesePedaggi)),
+    ),
+
+    speseExtra > 0 && React.createElement('div', { className: 'riepilogo-row' },
+      React.createElement('span', { className: 'riepilogo-label' }, 'Spese extra interventi'),
+      React.createElement('span', { className: 'riepilogo-value' }, fmtEur(speseExtra)),
+    ),
+
+    React.createElement('div', { className: 'riepilogo-row' },
+      React.createElement('span', { className: 'riepilogo-label' }, 'Totale spese'),
+      React.createElement('span', { className: 'riepilogo-value text-danger' }, fmtEur(totaleSpese)),
+    ),
+
+    ricavi > 0 && React.createElement('div', { className: 'riepilogo-row' },
+      React.createElement('span', { className: 'riepilogo-label' }, 'Ricavi'),
+      React.createElement('span', { className: 'riepilogo-value', style: { color: 'var(--success)' } }, fmtEur(ricavi)),
+    ),
+
+    React.createElement('div', { className: 'riepilogo-row total' },
+      React.createElement('span', null, 'Netto giornaliero'),
+      React.createElement('span', { style: { color: netto >= 0 ? 'var(--success)' : 'var(--danger)' } },
+        fmtEur(netto)
+      ),
+    ),
+  );
+}
+
+// ─── REGISTRO MESE ──────────────────────────────────────────────────────────
+function RegistroMese({ registro, onClickData }) {
+  const { righe, totali } = registro;
+  if (!righe.length) {
+    return React.createElement('p', { style: { color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: '20px 0' } },
+      'Nessun dato per questo mese.'
+    );
+  }
+
+  return React.createElement('div', { style: { overflowX: 'auto' } },
+    React.createElement('table', { className: 'month-table' },
+      React.createElement('thead', null,
+        React.createElement('tr', null,
+          React.createElement('th', null, 'Data'),
+          React.createElement('th', null, 'Interv.'),
+          React.createElement('th', null, 'KM'),
+          React.createElement('th', null, 'Sp. viaggio'),
+          React.createElement('th', null, 'Pedaggi'),
+          React.createElement('th', null, 'Sp. extra'),
+          React.createElement('th', null, 'Ricavi'),
+          React.createElement('th', null, 'Netto'),
+        )
+      ),
+      React.createElement('tbody', null,
+        righe.map(r => {
+          const netto = r.ricavi - r.totaleSpese;
+          return React.createElement('tr', {
+            key: r.data, style: { cursor: 'pointer' },
+            onClick: () => onClickData(r.data),
+          },
+            React.createElement('td', null, fmtDate(r.data)),
+            React.createElement('td', null, r.interventi),
+            React.createElement('td', null, `${r.km.toFixed(1)} km`),
+            React.createElement('td', null, fmtEur(r.speseViaggio)),
+            React.createElement('td', null, r.spesePedaggi > 0 ? fmtEur(r.spesePedaggi) : '—'),
+            React.createElement('td', null, r.speseExtra > 0 ? fmtEur(r.speseExtra) : '—'),
+            React.createElement('td', { style: { color: 'var(--success)' } }, r.ricavi > 0 ? fmtEur(r.ricavi) : '—'),
+            React.createElement('td', {
+              style: { color: netto >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }
+            }, fmtEur(netto)),
+          );
+        }),
+        // Riga totali
+        React.createElement('tr', { className: 'total-row' },
+          React.createElement('td', null, 'TOTALE'),
+          React.createElement('td', null, righe.length + ' gg'),
+          React.createElement('td', null, `${totali.km.toFixed(1)} km`),
+          React.createElement('td', null, fmtEur(totali.speseViaggio)),
+          React.createElement('td', null, totali.spesePedaggi > 0 ? fmtEur(totali.spesePedaggi) : '—'),
+          React.createElement('td', null, totali.speseExtra > 0 ? fmtEur(totali.speseExtra) : '—'),
+          React.createElement('td', null, fmtEur(totali.ricavi)),
+          React.createElement('td', null, fmtEur(totali.ricavi - totali.totaleSpese)),
+        ),
+      )
+    )
+  );
+}
+
+// ─── MOUNT ──────────────────────────────────────────────────────────────────
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>var useRef = React.useRef;
 var useCallback = React.useCallback;
 
 // ── Constants ──────────────────────────────────────────────────────────────
