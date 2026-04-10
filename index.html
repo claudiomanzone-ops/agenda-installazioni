@@ -112,7 +112,7 @@ function today(){return new Date().toISOString().slice(0,10);}
 function fmtEur(n){return '€ '+(parseFloat(n)||0).toFixed(2).replace('.',',');}
 function fmtDate(s){if(!s)return'';const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;}
 function fmtMY(s){if(!s)return'';const[y,m]=s.split('-');return`${MESI_IT[parseInt(m)-1]} ${y}`;}
-function newInt(){return{id:Date.now()+Math.random(),indirizzo:'',tipo:'Nuova installazione',cliente:'',note:'',dispositivi_extra:0,ricavo:0,spese_extra:0};}
+function newInt(){return{id:Date.now()+Math.random(),indirizzo:'',tipo:'Nuova installazione',cliente:'',note:'',dispositivi_extra:0,ricavo:120,spese_extra:0};}
 
 function loadData(){
   try{const r=localStorage.getItem(STORAGE_KEY);if(!r)return{giorni:{},settings:DEF_SET};const p=JSON.parse(r);return{giorni:p.giorni||{},settings:{...DEF_SET,...(p.settings||{})}};}
@@ -182,8 +182,19 @@ function App(){
   function delI(idx){const g=getG(dataSel);upG(dataSel,{interventi:g.interventi.filter((_,i)=>i!==idx)});}
 
   async function doCalc(){
-    const g=getG(dataSel);const ind=g.interventi.map(i=>i.indirizzo).filter(Boolean);
-    if(!ind.length)return;setCalc(true);
+    const g=getG(dataSel);
+    // Flush: legge i valori attuali dai campi indirizzo nel DOM (potrebbero non essere stati salvati via blur)
+    const inputs=document.querySelectorAll('.addr-input');
+    const intervAggiornati=g.interventi.map((it,i)=>{
+      const domVal=inputs[i]?.value;
+      return(domVal&&domVal!==it.indirizzo)?{...it,indirizzo:domVal}:it;
+    });
+    // Salva in state se ci sono differenze
+    const changed=intervAggiornati.some((it,i)=>it.indirizzo!==g.interventi[i].indirizzo);
+    if(changed) upG(dataSel,{interventi:intervAggiornati});
+    const ind=intervAggiornati.map(i=>i.indirizzo).filter(Boolean);
+    if(!ind.length)return;
+    setCalc(true);
     const{km}=await calcolaPercorso(settings.cittaBase,ind);
     upG(dataSel,{km});setCalc(false);
   }
@@ -549,7 +560,7 @@ function AddrInput({value,onChange}){
     acRef.current.addListener('place_changed',()=>{const p=acRef.current.getPlace();if(p?.formatted_address)onChange(p.formatted_address);});
   },[]);
   useEffect(()=>{if(ref.current&&ref.current!==document.activeElement)ref.current.value=value||'';},[value]);
-  return React.createElement('input',{ref,type:'text',defaultValue:value||'',placeholder:'Via Roma 1, Genova GE',onBlur:e=>{if(e.target.value!==value)onChange(e.target.value);},style:{width:'100%'}});
+  return React.createElement('input',{ref,type:'text',defaultValue:value||'',placeholder:'Via Roma 1, Genova GE',className:'addr-input',onBlur:e=>{if(e.target.value!==value)onChange(e.target.value);},style:{width:'100%'}});
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
