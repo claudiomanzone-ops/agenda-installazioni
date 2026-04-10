@@ -87,15 +87,31 @@
   .pac-item-query{color:#2dd4bf!important;font-size:13px!important;}
   .pac-icon{display:none!important;}.pac-logo::after{display:none!important;}
   @media print{
-    body{background:#fff!important;color:#000!important;}
-    #root{padding:0;max-width:100%;}
+    @page{margin:8mm 10mm;size:A4 portrait;}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    html,body{background:#fff!important;color:#000!important;height:auto!important;overflow:visible!important;}
+    #root{padding:0;max-width:100%;height:auto!important;}
     .no-print{display:none!important;}
-    .rtable th,.mtable th{color:#555!important;border-bottom:1px solid #ccc!important;}
-    .rtable td,.mtable td{border-bottom:1px solid #eee!important;color:#000!important;}
-    .rtable .tot-row td,.mtable .tot-row td{background:#f5f5f5!important;color:#000!important;border-top:1px solid #ccc!important;}
-    .report-box,.card{background:#fff!important;border:none!important;padding:4px 0!important;}
-    .km-badge{background:#eee!important;color:#000!important;}
-    .summary-value{color:#000!important;}
+    /* Tabelle compatte */
+    .rtable,.mtable{font-size:8.5px!important;width:100%!important;}
+    .rtable th,.mtable th{padding:3px 4px!important;color:#444!important;border-bottom:1px solid #bbb!important;font-size:8px!important;}
+    .rtable td,.mtable td{padding:3px 4px!important;border-bottom:1px solid #e8e8e8!important;color:#000!important;}
+    .rtable .tot-row td,.mtable .tot-row td{background:#f0f0f0!important;color:#000!important;border-top:1px solid #bbb!important;padding:3px 4px!important;}
+    .mtable tr.day-sep td{border-top:1px solid #ccc!important;}
+    /* Report box */
+    .report-box{background:#fff!important;border:1px solid #ccc!important;padding:6px!important;margin:0!important;}
+    .report-title{font-size:10px!important;margin-bottom:6px!important;}
+    /* Summary bar compatta: una riga */
+    .summary-bar{display:flex!important;flex-wrap:nowrap!important;gap:12px!important;padding-top:5px!important;border-top:1px solid #ccc!important;}
+    .summary-label{font-size:7.5px!important;}
+    .summary-value{font-size:11px!important;color:#000!important;}
+    .km-badge{background:#eee!important;color:#000!important;font-size:9px!important;padding:1px 5px!important;}
+    /* Card mese */
+    .card{background:#fff!important;border:none!important;padding:0!important;margin:0!important;}
+    .card-title{font-size:10px!important;margin-bottom:4px!important;}
+    /* Elimina spazio vuoto residuo */
+    div,section{page-break-inside:avoid;}
+    body>div:last-child{page-break-after:avoid!important;}
   }
 </style>
 </head>
@@ -250,10 +266,30 @@ function App(){
 
   function stampa(id){
     const el=document.getElementById(id);if(!el)return;
-    const tmp=document.createElement('div');tmp.innerHTML=el.innerHTML;
-    const orig=document.body.innerHTML;
-    document.body.innerHTML=`<div style="font-family:sans-serif;padding:20px">${tmp.innerHTML}</div>`;
-    window.print();document.body.innerHTML=orig;window.location.reload();
+    const w=window.open('','_blank','width=900,height=700');
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <style>
+      @page{margin:8mm 10mm;size:A4 portrait;}
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:9px;color:#000;background:#fff;height:auto!important;overflow:visible!important;}
+      table{width:100%;border-collapse:collapse;}
+      th{text-align:left;padding:3px 4px;color:#444;border-bottom:1px solid #bbb;font-size:8px;text-transform:uppercase;font-weight:600;}
+      td{padding:3px 4px;border-bottom:1px solid #eee;color:#000;vertical-align:middle;}
+      .tot-row td{background:#f0f0f0;font-weight:700;border-top:1px solid #bbb;}
+      .day-sep td{border-top:1px solid #ccc;}
+      .report-title{font-size:11px;font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between;}
+      .summary-bar{display:flex;gap:14px;padding-top:5px;border-top:1px solid #ccc;margin-top:4px;flex-wrap:nowrap;}
+      .summary-item{display:flex;flex-direction:column;gap:1px;}
+      .summary-label{font-size:7px;text-transform:uppercase;color:#666;}
+      .summary-value{font-size:11px;font-weight:700;}
+      .km-badge{background:#eee;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;}
+      .card-title{font-size:11px;font-weight:700;margin-bottom:6px;}
+      button{display:none!important;}
+      .no-print{display:none!important;}
+    </style></head><body>${el.innerHTML}</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(()=>{w.print();w.close();},400);
   }
 
   const giorno=getG(dataSel);
