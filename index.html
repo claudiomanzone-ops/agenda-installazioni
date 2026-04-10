@@ -120,17 +120,23 @@ function loadData(){
 }
 function saveData(d){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(d));}catch{}}
 
+// Restituisce { km: totale, segmenti: [km_seg0, km_seg1, ...] }
+// tappe: [casa, i1, i2, ..., casa]  →  segmenti.length = tappe.length - 1
 function calcolaPercorso(base,indirizzi){
   return new Promise(resolve=>{
     const v=indirizzi.filter(a=>a&&a.trim());
-    if(!v.length||!window.google?.maps){resolve({km:0});return;}
+    if(!v.length||!window.google?.maps){resolve({km:0,segmenti:[]});return;}
     const t=[base,...v,base];
     const svc=new window.google.maps.DistanceMatrixService();
+    const segmenti=[];
     let tot=0,i=0;
     function nxt(){
-      if(i>=t.length-1){resolve({km:Math.round(tot*10)/10});return;}
+      if(i>=t.length-1){resolve({km:Math.round(tot*10)/10,segmenti});return;}
       svc.getDistanceMatrix({origins:[t[i]],destinations:[t[i+1]],travelMode:window.google.maps.TravelMode.DRIVING,unitSystem:window.google.maps.UnitSystem.METRIC},(res,st)=>{
-        if(st==='OK'){const el=res.rows?.[0]?.elements?.[0];if(el?.status==='OK')tot+=el.distance.value/1000;}
+        let km=0;
+        if(st==='OK'){const el=res.rows?.[0]?.elements?.[0];if(el?.status==='OK')km=el.distance.value/1000;}
+        segmenti.push(Math.round(km*10)/10);
+        tot+=km;
         i++;nxt();
       });
     }
@@ -146,16 +152,31 @@ function calcGiorno(g,s){
   return{km,kmH,sv,sp,se,ric,tot:sv+sp+se};
 }
 
-// Una riga per intervento; spese viaggio+pedaggi solo sulla prima riga del giorno
+// Spese viaggio proporzionali al percorso di ogni intervento:
+// Intervento i  →  segmento_andata[i] + (se è l'ultimo → segmento_ritorno)
+// Se non ci sono segmenti salvati → fallback: tutto sulla prima riga
 function righeGiorno(g,s){
   const r=calcGiorno(g,s);
-  return(g.interventi||[]).map((it,i)=>{
-    const prima=i===0;
-    const sv=prima?r.sv:0,sp=prima?r.sp:0;
+  const interventi=g.interventi||[];
+  const seg=g.segmenti||[];  // salvati dopo il calcolo automatico
+  const n=interventi.length;
+
+  return interventi.map((it,i)=>{
+    let kmSeg=0;
+    if(seg.length===n+1){
+      // seg[0]=casa→i0, seg[1]=i0→i1, ..., seg[n-1]=i(n-2)→i(n-1), seg[n]=i(n-1)→casa
+      kmSeg=seg[i];                        // tratto di andata verso questo cliente
+      if(i===n-1) kmSeg+=seg[n];          // + ritorno a casa se è l'ultimo
+    } else {
+      // fallback: proporzione sul totale km
+      kmSeg = n===1 ? r.km : (i===0 ? r.km : 0);
+    }
+    const sv=kmSeg*s.costoKm;
+    const sp=i===0?(r.sp>0?r.sp:0):0;  // pedaggi sulla prima riga (non proporzionabili)
     const se=parseFloat(it.spese_extra)||0;
     const ric=parseFloat(it.ricavo)||0;
     const totS=sv+sp+se;
-    return{prima,cliente:it.cliente||'—',tipo:it.tipo,indirizzo:it.indirizzo||'—',ric,sv,sp,se,totS,netto:ric-totS,km:prima?r.km:0};
+    return{prima:i===0,cliente:it.cliente||'—',tipo:it.tipo,indirizzo:it.indirizzo||'—',ric,sv,sp,se,totS,netto:ric-totS,km:kmSeg};
   });
 }
 
@@ -164,7 +185,7 @@ function App(){
   const [tab,setTab]=useState('oggi');
   const [dataSel,setDataSel]=useState(today());
   const [archOpen,setArchOpen]=useState({});
-  const [calc,setCalc]=useState(false);
+  const [calcInfo,setCalcInfo]=useState('');
   const [msg,setMsg]=useState('');
   const [mapsOk,setMapsOk]=useState(false);
 
@@ -181,22 +202,21 @@ function App(){
   function upI(idx,p){const g=getG(dataSel);upG(dataSel,{interventi:g.interventi.map((it,i)=>i===idx?{...it,...p}:it)});}
   function delI(idx){const g=getG(dataSel);upG(dataSel,{interventi:g.interventi.filter((_,i)=>i!==idx)});}
 
-  async function doCalc(){
+  async function doCalc(lista){
+    const ind=lista.map(i=>i.indirizzo).filter(Boolean);
+    if(!ind.length||!window.google?.maps)return;
+    setCalcInfo('calc');
+    const{km,segmenti}=await calcolaPercorso(settings.cittaBase,ind);
+    upG(dataSel,{km,segmenti});
+    setCalcInfo('ok');
+    setTimeout(()=>setCalcInfo(''),2500);
+  }
+
+  function onIndirizzoScelto(idx,nuovoInd){
     const g=getG(dataSel);
-    // Flush: legge i valori attuali dai campi indirizzo nel DOM (potrebbero non essere stati salvati via blur)
-    const inputs=document.querySelectorAll('.addr-input');
-    const intervAggiornati=g.interventi.map((it,i)=>{
-      const domVal=inputs[i]?.value;
-      return(domVal&&domVal!==it.indirizzo)?{...it,indirizzo:domVal}:it;
-    });
-    // Salva in state se ci sono differenze
-    const changed=intervAggiornati.some((it,i)=>it.indirizzo!==g.interventi[i].indirizzo);
-    if(changed) upG(dataSel,{interventi:intervAggiornati});
-    const ind=intervAggiornati.map(i=>i.indirizzo).filter(Boolean);
-    if(!ind.length)return;
-    setCalc(true);
-    const{km}=await calcolaPercorso(settings.cittaBase,ind);
-    upG(dataSel,{km});setCalc(false);
+    const ag=g.interventi.map((it,i)=>i===idx?{...it,indirizzo:nuovoInd}:it);
+    upG(dataSel,{interventi:ag});
+    doCalc(ag);
   }
 
   // Registro mese: righe per cliente, dal 1° del mese ad oggi (se mese corrente)
@@ -278,7 +298,7 @@ function App(){
         React.createElement('button',{className:'btn btn-secondary btn-sm',onClick:()=>{const d=new Date(dataSel);d.setDate(d.getDate()+1);setDataSel(d.toISOString().slice(0,10));}},'▶'),
         React.createElement('button',{className:'btn btn-secondary btn-sm',onClick:()=>setDataSel(today())},'Oggi'),
       ),
-      giorno.interventi.map((it,idx)=>React.createElement(CardInt,{key:it.id,idx,interv:it,onChange:p=>upI(idx,p),onRemove:()=>delI(idx)})),
+      giorno.interventi.map((it,idx)=>React.createElement(CardInt,{key:it.id,idx,interv:it,onChange:p=>upI(idx,p),onRemove:()=>delI(idx),onPlaceSelected:(v)=>onIndirizzoScelto(idx,v)})),
       React.createElement('button',{className:'btn btn-secondary w-full mt-8 no-print',onClick:addI},'+ Aggiungi intervento'),
 
       React.createElement('div',{className:'card mt-12 no-print'},
@@ -293,10 +313,9 @@ function App(){
             React.createElement('input',{type:'number',min:0,step:0.1,value:giorno.kmHighway||'',placeholder:'0 (opzionale)',onChange:e=>upG(dataSel,{kmHighway:e.target.value})})
           ),
         ),
-        giorno.interventi.some(i=>i.indirizzo)&&React.createElement('button',{className:'btn btn-secondary btn-sm mt-8',onClick:doCalc,disabled:calc},
-          calc?React.createElement('span',null,React.createElement('span',{className:'spinner'}),' Calcolo...'):
-          `🗺 Calcola automatico (${settings.cittaBase} → clienti → ${settings.cittaBase})`
-        ),
+        calcInfo==='calc'&&React.createElement('div',{style:{fontSize:12,color:'var(--text-muted)',marginTop:8,display:'flex',alignItems:'center',gap:6}},
+          React.createElement('span',{className:'spinner'}),' Calcolo km in corso...'),
+        calcInfo==='ok'&&React.createElement('div',{style:{fontSize:12,color:'var(--success)',marginTop:8}},'✓ KM aggiornati'),
         React.createElement('div',{className:'form-group mt-8'},
           React.createElement('label',null,'Note giorno'),
           React.createElement('textarea',{rows:2,value:giorno.note_giorno||'',placeholder:'Note...',onChange:e=>upG(dataSel,{note_giorno:e.target.value}),style:{resize:'vertical'}})
@@ -384,7 +403,7 @@ function App(){
 }
 
 // ─── CARD INTERVENTO ─────────────────────────────────────────────────────────
-function CardInt({idx,interv,onChange,onRemove}){
+function CardInt({idx,interv,onChange,onRemove,onPlaceSelected}){
   return React.createElement('div',{className:'interv-card'},
     React.createElement('div',{className:'interv-header'},
       React.createElement('div',{className:'interv-num'},idx+1),
@@ -395,7 +414,7 @@ function CardInt({idx,interv,onChange,onRemove}){
     React.createElement('div',{className:'form-row'},
       React.createElement('div',{className:'form-group',style:{flex:2}},
         React.createElement('label',null,'Indirizzo'),
-        React.createElement(AddrInput,{value:interv.indirizzo,onChange:v=>onChange({indirizzo:v})})
+        React.createElement(AddrInput,{value:interv.indirizzo,onChange:v=>onChange({indirizzo:v}),onPlaceSelected})
       ),
       React.createElement('div',{className:'form-group'},
         React.createElement('label',null,'Tipo'),
@@ -451,6 +470,7 @@ function ReportGiorno({data,righe,riepilogo,settings,onStampa}){
             React.createElement('th',null,'Cliente'),
             React.createElement('th',null,'Tipo'),
             React.createElement('th',null,'Indirizzo'),
+            React.createElement('th',{style:{textAlign:'right'}},'KM'),
             React.createElement('th',{style:{textAlign:'right'}},'Ricavo'),
             React.createElement('th',{style:{textAlign:'right'}},'Sp.viaggio'),
             React.createElement('th',{style:{textAlign:'right'}},'Pedaggi'),
@@ -462,7 +482,8 @@ function ReportGiorno({data,righe,riepilogo,settings,onStampa}){
             righe.map((r,i)=>React.createElement('tr',{key:i},
               React.createElement('td',null,r.cliente),
               React.createElement('td',{style:{color:'var(--text-dim)',fontSize:11}},r.tipo),
-              React.createElement('td',{style:{color:'var(--text-dim)',fontSize:11,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.indirizzo),
+              React.createElement('td',{style:{color:'var(--text-dim)',fontSize:11,maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.indirizzo),
+              React.createElement('td',{style:{textAlign:'right',color:'var(--accent)',fontSize:11}},r.km>0?`${r.km.toFixed(1)}`:'—'),
               React.createElement('td',{style:{textAlign:'right',color:'var(--success)'}},r.ric>0?fmtEur(r.ric):'—'),
               React.createElement('td',{style:{textAlign:'right',color:'var(--danger)'}},r.sv>0?fmtEur(r.sv):'—'),
               React.createElement('td',{style:{textAlign:'right',color:'var(--danger)'}},r.sp>0?fmtEur(r.sp):'—'),
@@ -472,6 +493,7 @@ function ReportGiorno({data,righe,riepilogo,settings,onStampa}){
             )),
             React.createElement('tr',{className:'tot-row'},
               React.createElement('td',{colSpan:3},'TOTALE'),
+              React.createElement('td',{style:{textAlign:'right'}},`${km.toFixed(1)}`),
               React.createElement('td',{style:{textAlign:'right'}},fmtEur(totRic)),
               React.createElement('td',{style:{textAlign:'right'}},fmtEur(sv)),
               React.createElement('td',{style:{textAlign:'right'}},sp>0?fmtEur(sp):'—'),
@@ -552,12 +574,12 @@ function RegMese({registro,onClickData}){
 }
 
 // ─── ADDRESS INPUT ────────────────────────────────────────────────────────────
-function AddrInput({value,onChange}){
+function AddrInput({value,onChange,onPlaceSelected}){
   const ref=useRef(null);const acRef=useRef(null);
   useEffect(()=>{
     if(!window.google?.maps?.places||acRef.current)return;
     acRef.current=new window.google.maps.places.Autocomplete(ref.current,{types:['address'],componentRestrictions:{country:'it'},fields:['formatted_address']});
-    acRef.current.addListener('place_changed',()=>{const p=acRef.current.getPlace();if(p?.formatted_address)onChange(p.formatted_address);});
+    acRef.current.addListener('place_changed',()=>{const p=acRef.current.getPlace();if(p?.formatted_address){onChange(p.formatted_address);if(onPlaceSelected)onPlaceSelected(p.formatted_address);}});
   },[]);
   useEffect(()=>{if(ref.current&&ref.current!==document.activeElement)ref.current.value=value||'';},[value]);
   return React.createElement('input',{ref,type:'text',defaultValue:value||'',placeholder:'Via Roma 1, Genova GE',className:'addr-input',onBlur:e=>{if(e.target.value!==value)onChange(e.target.value);},style:{width:'100%'}});
