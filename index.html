@@ -128,7 +128,7 @@ function today(){return new Date().toISOString().slice(0,10);}
 function fmtEur(n){return '€ '+(parseFloat(n)||0).toFixed(2).replace('.',',');}
 function fmtDate(s){if(!s)return'';const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;}
 function fmtMY(s){if(!s)return'';const[y,m]=s.split('-');return`${MESI_IT[parseInt(m)-1]} ${y}`;}
-function newInt(){return{id:Date.now()+Math.random(),indirizzo:'',tipo:'Nuova installazione',cliente:'',note:'',dispositivi_extra:0,ricavo:120,spese_extra:0};}
+function newInt(){return{id:Date.now()+Math.random(),indirizzo:'',casello:'',tipo:'Nuova installazione',cliente:'',note:'',dispositivi_extra:0,ricavo:120,spese_extra:0};}
 
 function loadData(){
   try{const r=localStorage.getItem(STORAGE_KEY);if(!r)return{giorni:{},settings:DEF_SET};const p=JSON.parse(r);return{giorni:p.giorni||{},settings:{...DEF_SET,...(p.settings||{})}};}
@@ -137,37 +137,38 @@ function loadData(){
 function saveData(d){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(d));}catch{}}
 
 // Restituisce { km, segmenti[], kmHighway, segmentiHighway[] }
-// Per ogni segmento chiama Directions con e senza autostrada; la differenza stima km autostradali
-function calcolaPercorso(base,indirizzi){
+// caselli[i] = casello di entrata per l'intervento i ('' = nessuna autostrada)
+// Se casello compilato → quel segmento (e ritorno se ultimo) è autostradale → kmSegH = kmSeg
+function calcolaPercorso(base,indirizzi,caselli){
   return new Promise(resolve=>{
     const v=indirizzi.filter(a=>a&&a.trim());
     if(!v.length||!window.google?.maps){resolve({km:0,segmenti:[],kmHighway:0,segmentiHighway:[]});return;}
     const t=[base,...v,base];
-    const dir=new window.google.maps.DirectionsService();
+    const svc=new window.google.maps.DistanceMatrixService();
     const segmenti=[],segmentiHighway=[];
     let tot=0,totH=0,i=0;
+    // caselli.length === indirizzi.length; caselli[i] riferito al segmento i (base→v[0], v[0]→v[1], ...)
+    // segmento i = t[i]→t[i+1]; segmento n = t[n]→base (ritorno)
+    const n=v.length;
     function nxt(){
       if(i>=t.length-1){
         resolve({km:Math.round(tot*10)/10,segmenti,kmHighway:Math.round(totH*10)/10,segmentiHighway});
         return;
       }
-      const req={origin:t[i],destination:t[i+1],travelMode:window.google.maps.TravelMode.DRIVING};
-      // Chiamata normale
-      dir.route(req,(res,st)=>{
+      svc.getDistanceMatrix({origins:[t[i]],destinations:[t[i+1]],travelMode:window.google.maps.TravelMode.DRIVING,unitSystem:window.google.maps.UnitSystem.METRIC},(res,st)=>{
         let km=0;
-        if(st==='OK')km=(res.routes?.[0]?.legs?.[0]?.distance?.value||0)/1000;
-        segmenti.push(Math.round(km*10)/10);
+        if(st==='OK'){const el=res.rows?.[0]?.elements?.[0];if(el?.status==='OK')km=el.distance.value/1000;}
+        const kmR=Math.round(km*10)/10;
+        segmenti.push(kmR);
         tot+=km;
-        // Chiamata senza autostrada per stima km autostradali
-        dir.route({...req,avoidHighways:true},(res2,st2)=>{
-          let kmNo=0;
-          if(st2==='OK')kmNo=(res2.routes?.[0]?.legs?.[0]?.distance?.value||0)/1000;
-          // km autostradali = differenza (se percorso senza autostrada è più lungo, autostrada=0)
-          const hwy=Math.max(0,Math.round((km-(kmNo>km?km:kmNo))*10)/10);
-          segmentiHighway.push(hwy);
-          totH+=hwy;
-          i++;nxt();
-        });
+        // Segmento i è autostradale se: casello[i] compilato (segmento andata)
+        // oppure se è il segmento di ritorno (i===n) e l'ultimo intervento ha casello compilato
+        const isHwy = i<n ? !!(caselli&&caselli[i]&&caselli[i].trim())
+                           : !!(caselli&&caselli[n-1]&&caselli[n-1].trim());
+        const hwy=isHwy?kmR:0;
+        segmentiHighway.push(hwy);
+        totH+=hwy;
+        i++;nxt();
       });
     }
     nxt();
@@ -236,10 +237,12 @@ function App(){
   function delI(idx){const g=getG(dataSel);upG(dataSel,{interventi:g.interventi.filter((_,i)=>i!==idx)});}
 
   async function doCalc(lista){
-    const ind=lista.map(i=>i.indirizzo).filter(Boolean);
-    if(!ind.length||!window.google?.maps)return;
+    const ind=lista.map(i=>i.indirizzo);
+    const cas=lista.map(i=>i.casello||'');
+    const validi=ind.filter(Boolean);
+    if(!validi.length||!window.google?.maps)return;
     setCalcInfo('calc');
-    const{km,segmenti,kmHighway,segmentiHighway}=await calcolaPercorso(settings.cittaBase,ind);
+    const{km,segmenti,kmHighway,segmentiHighway}=await calcolaPercorso(settings.cittaBase,validi,cas.filter((_,i)=>ind[i]));
     upG(dataSel,{km,segmenti,kmHighway,segmentiHighway});
     setCalcInfo('ok');
     setTimeout(()=>setCalcInfo(''),2500);
@@ -361,8 +364,8 @@ function App(){
             React.createElement('input',{type:'number',min:0,step:0.1,value:giorno.km||'',placeholder:'0',onChange:e=>upG(dataSel,{km:e.target.value})})
           ),
           React.createElement('div',{className:'form-group'},
-            React.createElement('label',null,'KM autostradali'),
-            React.createElement('input',{type:'number',min:0,step:0.1,value:giorno.kmHighway||'',placeholder:'0 (opzionale)',onChange:e=>upG(dataSel,{kmHighway:e.target.value})})
+            React.createElement('label',null,'KM autostradali (auto)'),
+            React.createElement('input',{type:'number',readOnly:true,value:giorno.kmHighway||'',placeholder:'0',style:{opacity:0.6,cursor:'default'}})
           ),
         ),
         calcInfo==='calc'&&React.createElement('div',{style:{fontSize:12,color:'var(--text-muted)',marginTop:8,display:'flex',alignItems:'center',gap:6}},
@@ -473,6 +476,12 @@ function CardInt({idx,interv,onChange,onRemove,onPlaceSelected}){
         React.createElement('select',{value:interv.tipo,onChange:e=>onChange({tipo:e.target.value})},
           TIPI.map(t=>React.createElement('option',{key:t,value:t},t))
         )
+      ),
+    ),
+    React.createElement('div',{className:'form-row'},
+      React.createElement('div',{className:'form-group',style:{flex:2}},
+        React.createElement('label',null,'🛣 Casello entrata autostrada (opzionale)'),
+        React.createElement(CaselloInput,{value:interv.casello||'',onChange:v=>onChange({casello:v})})
       ),
     ),
     React.createElement('div',{className:'form-row'},
@@ -623,6 +632,37 @@ function RegMese({registro,onClickData}){
       )
     )
   );
+}
+
+// ─── CASELLO INPUT ───────────────────────────────────────────────────────────
+function CaselloInput({value,onChange}){
+  const ref=useRef(null);const acRef=useRef(null);
+  useEffect(()=>{
+    if(!window.google?.maps?.places||acRef.current)return;
+    acRef.current=new window.google.maps.places.Autocomplete(ref.current,{
+      types:['establishment'],
+      componentRestrictions:{country:'it'},
+      fields:['name','formatted_address'],
+    });
+    // Bias verso caselli autostradali con keyword
+    if(window.google.maps.places.SearchBox) {} // noop
+    acRef.current.addListener('place_changed',()=>{
+      const p=acRef.current.getPlace();
+      if(p){
+        // Usa name se disponibile (es. "Genova Ovest"), altrimenti formatted_address
+        const v=p.name||p.formatted_address||'';
+        onChange(v);
+        if(ref.current)ref.current.value=v;
+      }
+    });
+  },[]);
+  useEffect(()=>{if(ref.current&&ref.current!==document.activeElement)ref.current.value=value||'';},[value]);
+  return React.createElement('input',{
+    ref,type:'text',defaultValue:value||'',
+    placeholder:'Es. Genova Ovest, Savona...',
+    onBlur:e=>{if(e.target.value!==value)onChange(e.target.value);},
+    style:{width:'100%'},
+  });
 }
 
 // ─── ADDRESS INPUT ────────────────────────────────────────────────────────────
