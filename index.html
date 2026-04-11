@@ -256,6 +256,14 @@ function App(){
     doCalc(ag);
   }
 
+  function onCaselloScelto(idx,nuovoCasello){
+    const g=getG(dataSel);
+    const ag=g.interventi.map((it,i)=>i===idx?{...it,casello:nuovoCasello}:it);
+    upG(dataSel,{interventi:ag});
+    // Ricalcola solo se ci sono indirizzi validi
+    if(ag.some(it=>it.indirizzo&&it.indirizzo.trim())) doCalc(ag);
+  }
+
   // Registro mese: righe per cliente, dal 1° del mese ad oggi (se mese corrente)
   function registroMese(annoMese){
     const oggiStr=today();
@@ -354,7 +362,7 @@ function App(){
         React.createElement('button',{className:'btn btn-secondary btn-sm',onClick:()=>{const d=new Date(dataSel);d.setDate(d.getDate()+1);setDataSel(d.toISOString().slice(0,10));}},'▶'),
         React.createElement('button',{className:'btn btn-secondary btn-sm',onClick:()=>setDataSel(today())},'Oggi'),
       ),
-      giorno.interventi.map((it,idx)=>React.createElement(CardInt,{key:it.id,idx,interv:it,onChange:p=>upI(idx,p),onRemove:()=>delI(idx),onPlaceSelected:(v)=>onIndirizzoScelto(idx,v)})),
+      giorno.interventi.map((it,idx)=>React.createElement(CardInt,{key:it.id,idx,interv:it,onChange:p=>upI(idx,p),onRemove:()=>delI(idx),onPlaceSelected:(v)=>onIndirizzoScelto(idx,v),onCaselloSelected:(v)=>onCaselloScelto(idx,v)})),
       React.createElement('button',{className:'btn btn-secondary w-full mt-8 no-print',onClick:addI},'+ Aggiungi intervento'),
 
       React.createElement('div',{className:'card mt-12 no-print'},
@@ -467,7 +475,7 @@ function App(){
 }
 
 // ─── CARD INTERVENTO ─────────────────────────────────────────────────────────
-function CardInt({idx,interv,onChange,onRemove,onPlaceSelected}){
+function CardInt({idx,interv,onChange,onRemove,onPlaceSelected,onCaselloSelected}){
   return React.createElement('div',{className:'interv-card'},
     React.createElement('div',{className:'interv-header'},
       React.createElement('div',{className:'interv-num'},idx+1),
@@ -490,7 +498,7 @@ function CardInt({idx,interv,onChange,onRemove,onPlaceSelected}){
     React.createElement('div',{className:'form-row'},
       React.createElement('div',{className:'form-group',style:{flex:2}},
         React.createElement('label',null,'🛣 Casello entrata autostrada (opzionale)'),
-        React.createElement(CaselloInput,{value:interv.casello||'',onChange:v=>onChange({casello:v})})
+        React.createElement(CaselloInput,{value:interv.casello||'',onChange:v=>onChange({casello:v}),onPlaceSelected:onCaselloSelected})
       ),
     ),
     React.createElement('div',{className:'form-row'},
@@ -644,7 +652,7 @@ function RegMese({registro,onClickData}){
 }
 
 // ─── CASELLO INPUT ───────────────────────────────────────────────────────────
-function CaselloInput({value,onChange}){
+function CaselloInput({value,onChange,onPlaceSelected}){
   const ref=useRef(null);const acRef=useRef(null);
   useEffect(()=>{
     if(!window.google?.maps?.places||acRef.current)return;
@@ -658,10 +666,10 @@ function CaselloInput({value,onChange}){
     acRef.current.addListener('place_changed',()=>{
       const p=acRef.current.getPlace();
       if(p){
-        // Usa name se disponibile (es. "Genova Ovest"), altrimenti formatted_address
         const v=p.name||p.formatted_address||'';
         onChange(v);
         if(ref.current)ref.current.value=v;
+        if(onPlaceSelected)onPlaceSelected(v);
       }
     });
   },[]);
