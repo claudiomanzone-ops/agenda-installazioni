@@ -7,6 +7,8 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCygUawe-ofhq2BtB-l0SvQnM3jlGmqCyo&libraries=places&language=it"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root {
     --bg:#12122a; --card:#1e1e3a; --card2:#252545;
@@ -417,26 +419,166 @@ function App(){
     </body></html>`;
   }
 
-  // ── STAMPA ────────────────────────────────────────────────────────────────
-  function stampaHTML(html){
-    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.target='_blank';
-    a.rel='noopener';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url),10000);
-  }
-
+  // ── PDF GIORNO ────────────────────────────────────────────────────────────
   function stampaGiorno(){
-    stampaHTML(generaHTMLGiorno(dataSel,righeG,riepilogoG,settings));
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const totRic=righeG.reduce((a,r)=>a+r.ric,0);
+    const totS=righeG.reduce((a,r)=>a+r.totS,0);
+    const netto=totRic-totS;
+
+    // Header
+    doc.setFontSize(13);doc.setFont('helvetica','bold');
+    doc.text('Report giornaliero — '+fmtDate(dataSel),14,13);
+    doc.setFontSize(8);doc.setFont('helvetica','normal');
+    doc.setTextColor(100);
+    doc.text('Protecta Group · Ajax Systems · €/km '+settings.costoKm.toFixed(2)+' · pedaggi €'+settings.pedaggi_km_rate.toFixed(2)+'/km',14,18);
+    doc.setTextColor(0);
+
+    // Tabella interventi
+    const head=[['Cliente','Tipo','Indirizzo','KM','Ricavo','Sp.viaggio','Pedaggi','Sp.extra','Tot.spese','Netto']];
+    const body=righeG.map(r=>[
+      r.cliente, r.tipo,
+      r.indirizzo.length>28?r.indirizzo.slice(0,26)+'…':r.indirizzo,
+      r.km>0?r.km.toFixed(1):'—',
+      r.ric>0?fmtEur(r.ric):'—',
+      r.sv>0?fmtEur(r.sv):'—',
+      r.sp>0?fmtEur(r.sp):'—',
+      r.se>0?fmtEur(r.se):'—',
+      fmtEur(r.totS),
+      fmtEur(r.netto),
+    ]);
+    body.push(['TOTALE','','',
+      riepilogoG.km.toFixed(1),
+      fmtEur(totRic),
+      fmtEur(riepilogoG.sv),
+      riepilogoG.sp>0?fmtEur(riepilogoG.sp):'—',
+      '—',
+      fmtEur(totS),
+      fmtEur(netto),
+    ]);
+
+    doc.autoTable({
+      head,body,
+      startY:22,
+      styles:{fontSize:8,cellPadding:1.5,overflow:'ellipsize'},
+      headStyles:{fillColor:[40,40,40],textColor:255,fontStyle:'bold',fontSize:7.5},
+      columnStyles:{
+        0:{cellWidth:22},1:{cellWidth:22},2:{cellWidth:38},
+        3:{cellWidth:10,halign:'right'},4:{cellWidth:16,halign:'right'},
+        5:{cellWidth:16,halign:'right'},6:{cellWidth:14,halign:'right'},
+        7:{cellWidth:14,halign:'right'},8:{cellWidth:16,halign:'right'},
+        9:{cellWidth:16,halign:'right'},
+      },
+      didParseCell:function(d){
+        if(d.row.index===body.length-1){
+          d.cell.styles.fontStyle='bold';
+          d.cell.styles.fillColor=[235,235,235];
+        }
+      },
+      margin:{left:5,right:5},
+    });
+
+    // Summary bar
+    const y=doc.lastAutoTable.finalY+5;
+    doc.setFontSize(8);doc.setFont('helvetica','bold');
+    const items=[
+      ['KM totali',riepilogoG.km.toFixed(1)+' km'],
+      ['KM autostrada',riepilogoG.kmH.toFixed(1)+' km'],
+      ['Tot. spese',fmtEur(totS)],
+      ['Ricavi',fmtEur(totRic)],
+      ['Netto',fmtEur(netto)],
+    ];
+    let x=5;
+    items.forEach(([lbl,val])=>{
+      doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(80);
+      doc.text(lbl,x,y);
+      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(0);
+      doc.text(val,x,y+4.5);
+      x+=38;
+    });
+
+    doc.save('report_giorno_'+dataSel+'.pdf');
   }
 
+  // ── PDF MESE ──────────────────────────────────────────────────────────────
   function stampaMese(){
-    stampaHTML(generaHTMLMese(regM,meseSel,settings));
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const{righe,tot}=regM;
+
+    // Header
+    doc.setFontSize(13);doc.setFont('helvetica','bold');
+    doc.text('Registro mensile — '+fmtMY(meseSel),14,13);
+    doc.setFontSize(8);doc.setFont('helvetica','normal');
+    doc.setTextColor(100);
+    doc.text('Protecta Group · Ajax Systems · dal 1° ad oggi',14,18);
+    doc.setTextColor(0);
+
+    // Tabella
+    const head=[['Data','Cliente','Tipo','Ricavo','Sp.viaggio','Pedaggi','Sp.extra','Tot.spese','Netto']];
+    const body=righe.map(r=>[
+      r.firstDay?fmtDate(r.data):'',
+      r.cliente, r.tipo,
+      r.ric>0?fmtEur(r.ric):'—',
+      r.sv>0?fmtEur(r.sv):'—',
+      r.sp>0?fmtEur(r.sp):'—',
+      r.se>0?fmtEur(r.se):'—',
+      fmtEur(r.totS),
+      fmtEur(r.netto),
+    ]);
+    body.push(['TOTALE MESE','','',
+      fmtEur(tot.ric),fmtEur(tot.sv),
+      tot.sp>0?fmtEur(tot.sp):'—',
+      tot.se>0?fmtEur(tot.se):'—',
+      fmtEur(tot.totS),fmtEur(tot.netto),
+    ]);
+
+    // Colora alternando giorni
+    let lastDate='';let fillA=[248,248,248];let fillB=[255,255,255];
+    let toggle=false;
+    doc.autoTable({
+      head,body,
+      startY:22,
+      styles:{fontSize:8,cellPadding:1.2,overflow:'ellipsize'},
+      headStyles:{fillColor:[40,40,40],textColor:255,fontStyle:'bold',fontSize:7.5},
+      columnStyles:{
+        0:{cellWidth:16},1:{cellWidth:26},2:{cellWidth:22},
+        3:{cellWidth:16,halign:'right'},4:{cellWidth:16,halign:'right'},
+        5:{cellWidth:14,halign:'right'},6:{cellWidth:14,halign:'right'},
+        7:{cellWidth:18,halign:'right'},8:{cellWidth:18,halign:'right'},
+      },
+      didParseCell:function(d){
+        if(d.section==='body'){
+          const isTotal=d.row.index===body.length-1;
+          if(isTotal){d.cell.styles.fontStyle='bold';d.cell.styles.fillColor=[235,235,235];return;}
+          const dateVal=righe[d.row.index]?.data||'';
+          if(dateVal!==lastDate&&dateVal){lastDate=dateVal;toggle=!toggle;}
+          d.cell.styles.fillColor=toggle?fillA:fillB;
+        }
+      },
+      margin:{left:5,right:5},
+    });
+
+    // Summary
+    const y=doc.lastAutoTable.finalY+5;
+    doc.setFontSize(8);
+    const items=[
+      ['KM totali',tot.km.toFixed(1)+' km'],
+      ['Tot. spese',fmtEur(tot.totS)],
+      ['Ricavi',fmtEur(tot.ric)],
+      ['Netto',fmtEur(tot.netto)],
+    ];
+    let x=5;
+    items.forEach(([lbl,val])=>{
+      doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(80);
+      doc.text(lbl,x,y);
+      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(0);
+      doc.text(val,x,y+4.5);
+      x+=47;
+    });
+
+    doc.save('registro_mese_'+meseSel+'.pdf');
   }
 
   const giorno=getG(dataSel);
