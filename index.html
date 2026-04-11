@@ -237,12 +237,13 @@ function App(){
   function delI(idx){const g=getG(dataSel);upG(dataSel,{interventi:g.interventi.filter((_,i)=>i!==idx)});}
 
   async function doCalc(lista){
-    const ind=lista.map(i=>i.indirizzo);
-    const cas=lista.map(i=>i.casello||'');
-    const validi=ind.filter(Boolean);
-    if(!validi.length||!window.google?.maps)return;
+    // Mantieni coppie indirizzo+casello allineate, filtra solo su indirizzo valido
+    const coppie=lista.filter(i=>i.indirizzo&&i.indirizzo.trim());
+    if(!coppie.length||!window.google?.maps)return;
+    const validi=coppie.map(i=>i.indirizzo);
+    const cas=coppie.map(i=>i.casello||'');
     setCalcInfo('calc');
-    const{km,segmenti,kmHighway,segmentiHighway}=await calcolaPercorso(settings.cittaBase,validi,cas.filter((_,i)=>ind[i]));
+    const{km,segmenti,kmHighway,segmentiHighway}=await calcolaPercorso(settings.cittaBase,validi,cas);
     upG(dataSel,{km,segmenti,kmHighway,segmentiHighway});
     setCalcInfo('ok');
     setTimeout(()=>setCalcInfo(''),2500);
