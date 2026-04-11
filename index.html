@@ -136,24 +136,38 @@ function loadData(){
 }
 function saveData(d){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(d));}catch{}}
 
-// Restituisce { km: totale, segmenti: [km_seg0, km_seg1, ...] }
-// tappe: [casa, i1, i2, ..., casa]  →  segmenti.length = tappe.length - 1
+// Restituisce { km, segmenti[], kmHighway, segmentiHighway[] }
+// Per ogni segmento chiama Directions con e senza autostrada; la differenza stima km autostradali
 function calcolaPercorso(base,indirizzi){
   return new Promise(resolve=>{
     const v=indirizzi.filter(a=>a&&a.trim());
-    if(!v.length||!window.google?.maps){resolve({km:0,segmenti:[]});return;}
+    if(!v.length||!window.google?.maps){resolve({km:0,segmenti:[],kmHighway:0,segmentiHighway:[]});return;}
     const t=[base,...v,base];
-    const svc=new window.google.maps.DistanceMatrixService();
-    const segmenti=[];
-    let tot=0,i=0;
+    const dir=new window.google.maps.DirectionsService();
+    const segmenti=[],segmentiHighway=[];
+    let tot=0,totH=0,i=0;
     function nxt(){
-      if(i>=t.length-1){resolve({km:Math.round(tot*10)/10,segmenti});return;}
-      svc.getDistanceMatrix({origins:[t[i]],destinations:[t[i+1]],travelMode:window.google.maps.TravelMode.DRIVING,unitSystem:window.google.maps.UnitSystem.METRIC},(res,st)=>{
+      if(i>=t.length-1){
+        resolve({km:Math.round(tot*10)/10,segmenti,kmHighway:Math.round(totH*10)/10,segmentiHighway});
+        return;
+      }
+      const req={origin:t[i],destination:t[i+1],travelMode:window.google.maps.TravelMode.DRIVING};
+      // Chiamata normale
+      dir.route(req,(res,st)=>{
         let km=0;
-        if(st==='OK'){const el=res.rows?.[0]?.elements?.[0];if(el?.status==='OK')km=el.distance.value/1000;}
+        if(st==='OK')km=(res.routes?.[0]?.legs?.[0]?.distance?.value||0)/1000;
         segmenti.push(Math.round(km*10)/10);
         tot+=km;
-        i++;nxt();
+        // Chiamata senza autostrada per stima km autostradali
+        dir.route({...req,avoidHighways:true},(res2,st2)=>{
+          let kmNo=0;
+          if(st2==='OK')kmNo=(res2.routes?.[0]?.legs?.[0]?.distance?.value||0)/1000;
+          // km autostradali = differenza (se percorso senza autostrada è più lungo, autostrada=0)
+          const hwy=Math.max(0,Math.round((km-(kmNo>km?km:kmNo))*10)/10);
+          segmentiHighway.push(hwy);
+          totH+=hwy;
+          i++;nxt();
+        });
       });
     }
     nxt();
@@ -168,31 +182,34 @@ function calcGiorno(g,s){
   return{km,kmH,sv,sp,se,ric,tot:sv+sp+se};
 }
 
-// Spese viaggio proporzionali al percorso di ogni intervento:
-// Intervento i  →  segmento_andata[i] + (se è l'ultimo → segmento_ritorno)
-// Se non ci sono segmenti salvati → fallback: tutto sulla prima riga
+// Spese viaggio E pedaggi proporzionali al segmento di competenza
+// seg[i] = tratto verso cliente i; seg[n] = ritorno casa; segH = km autostradali per segmento
 function righeGiorno(g,s){
   const r=calcGiorno(g,s);
   const interventi=g.interventi||[];
-  const seg=g.segmenti||[];  // salvati dopo il calcolo automatico
+  const seg=g.segmenti||[];
+  const segH=g.segmentiHighway||[];
   const n=interventi.length;
 
   return interventi.map((it,i)=>{
-    let kmSeg=0;
+    let kmSeg=0,kmSegH=0;
     if(seg.length===n+1){
-      // seg[0]=casa→i0, seg[1]=i0→i1, ..., seg[n-1]=i(n-2)→i(n-1), seg[n]=i(n-1)→casa
-      kmSeg=seg[i];                        // tratto di andata verso questo cliente
-      if(i===n-1) kmSeg+=seg[n];          // + ritorno a casa se è l'ultimo
+      kmSeg=seg[i];
+      if(i===n-1)kmSeg+=seg[n];
+      if(segH.length===n+1){
+        kmSegH=segH[i];
+        if(i===n-1)kmSegH+=segH[n];
+      }
     } else {
-      // fallback: proporzione sul totale km
-      kmSeg = n===1 ? r.km : (i===0 ? r.km : 0);
+      kmSeg=n===1?r.km:(i===0?r.km:0);
+      kmSegH=n===1?r.kmH:(i===0?r.kmH:0);
     }
     const sv=kmSeg*s.costoKm;
-    const sp=i===0?(r.sp>0?r.sp:0):0;  // pedaggi sulla prima riga (non proporzionabili)
+    const sp=kmSegH*s.pedaggi_km_rate;
     const se=parseFloat(it.spese_extra)||0;
     const ric=parseFloat(it.ricavo)||0;
     const totS=sv+sp+se;
-    return{prima:i===0,cliente:it.cliente||'—',tipo:it.tipo,indirizzo:it.indirizzo||'—',ric,sv,sp,se,totS,netto:ric-totS,km:kmSeg};
+    return{prima:i===0,cliente:it.cliente||'—',tipo:it.tipo,indirizzo:it.indirizzo||'—',ric,sv,sp,se,totS,netto:ric-totS,km:kmSeg,kmH:kmSegH};
   });
 }
 
@@ -222,8 +239,8 @@ function App(){
     const ind=lista.map(i=>i.indirizzo).filter(Boolean);
     if(!ind.length||!window.google?.maps)return;
     setCalcInfo('calc');
-    const{km,segmenti}=await calcolaPercorso(settings.cittaBase,ind);
-    upG(dataSel,{km,segmenti});
+    const{km,segmenti,kmHighway,segmentiHighway}=await calcolaPercorso(settings.cittaBase,ind);
+    upG(dataSel,{km,segmenti,kmHighway,segmentiHighway});
     setCalcInfo('ok');
     setTimeout(()=>setCalcInfo(''),2500);
   }
@@ -266,30 +283,29 @@ function App(){
 
   function stampa(id){
     const el=document.getElementById(id);if(!el)return;
-    const w=window.open('','_blank','width=900,height=700');
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-    <style>
+    const orig=document.body.innerHTML;
+    const stile=`<style>
       @page{margin:8mm 10mm;size:A4 portrait;}
       *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-      html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:9px;color:#000;background:#fff;height:auto!important;overflow:visible!important;}
+      html,body{margin:0;padding:6px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:9px;color:#000;background:#fff;}
       table{width:100%;border-collapse:collapse;}
       th{text-align:left;padding:3px 4px;color:#444;border-bottom:1px solid #bbb;font-size:8px;text-transform:uppercase;font-weight:600;}
       td{padding:3px 4px;border-bottom:1px solid #eee;color:#000;vertical-align:middle;}
-      .tot-row td{background:#f0f0f0;font-weight:700;border-top:1px solid #bbb;}
+      .tot-row td{background:#f0f0f0!important;font-weight:700;border-top:1px solid #bbb;}
       .day-sep td{border-top:1px solid #ccc;}
       .report-title{font-size:11px;font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between;}
       .summary-bar{display:flex;gap:14px;padding-top:5px;border-top:1px solid #ccc;margin-top:4px;flex-wrap:nowrap;}
       .summary-item{display:flex;flex-direction:column;gap:1px;}
       .summary-label{font-size:7px;text-transform:uppercase;color:#666;}
-      .summary-value{font-size:11px;font-weight:700;}
-      .km-badge{background:#eee;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;}
+      .summary-value{font-size:11px;font-weight:700;color:#000!important;}
+      .km-badge{background:#eee;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;color:#000!important;}
       .card-title{font-size:11px;font-weight:700;margin-bottom:6px;}
-      button{display:none!important;}
-      .no-print{display:none!important;}
-    </style></head><body>${el.innerHTML}</body></html>`);
-    w.document.close();
-    w.focus();
-    setTimeout(()=>{w.print();w.close();},400);
+      button,.no-print{display:none!important;}
+    </style>`;
+    document.body.innerHTML=stile+el.innerHTML;
+    window.print();
+    document.body.innerHTML=orig;
+    window.location.reload();
   }
 
   const giorno=getG(dataSel);
