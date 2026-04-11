@@ -418,22 +418,18 @@ function App(){
   }
 
   // ── STAMPA ────────────────────────────────────────────────────────────────
+  function stampaHTML(html){
+    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    window.location.href=url;
+  }
+
   function stampaGiorno(){
-    const html=generaHTMLGiorno(dataSel,righeG,riepilogoG,settings);
-    const orig=document.body.innerHTML;
-    document.body.innerHTML=html;
-    window.print();
-    document.body.innerHTML=orig;
-    window.location.reload();
+    stampaHTML(generaHTMLGiorno(dataSel,righeG,riepilogoG,settings));
   }
 
   function stampaMese(){
-    const html=generaHTMLMese(regM,meseSel,settings);
-    const orig=document.body.innerHTML;
-    document.body.innerHTML=html;
-    window.print();
-    document.body.innerHTML=orig;
-    window.location.reload();
+    stampaHTML(generaHTMLMese(regM,meseSel,settings));
   }
 
   const giorno=getG(dataSel);
